@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TrailMind">
+  <title>TrailMind</title>
+  <rect width="512" height="512" rx="112" fill="#164B3B" />
+  <circle cx="358" cy="150" r="40" fill="#E89A55" />
+  <path d="M72 372 L192 196 L272 300 L320 236 L440 372 Z" fill="#A8BFA8" />
+  <path d="M132 372 Q256 312 388 372" fill="none" stroke="#F8F8F3" stroke-width="22" stroke-linecap="round" stroke-dasharray="44 34" />
+  <rect x="72" y="396" width="368" height="26" rx="13" fill="#F8F8F3" opacity="0.85" />
+</svg>

@@ -1,0 +1,49 @@
+{
+  "name": "TrailMind — Your AI Travel Companion",
+  "short_name": "TrailMind",
+  "description": "Offline-first AI travel companion: itineraries, wallet, phrasebook and an assistant that works without internet.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#F8F8F3",
+  "theme_color": "#164B3B",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["travel", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My trips",
+      "short_name": "Trips",
+      "url": "/trips",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Assistant",
+      "short_name": "Assistant",
+      "url": "/assistant",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Downloads",
+      "short_name": "Downloads",
+      "url": "/downloads",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}

@@ -1,69 +1,114 @@
-import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight, Bot, CloudOff, Compass, MapPin, Wifi } from "lucide-react";
 
-export default function Home() {
+import { buttonVariants } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { siteConfig } from "@/constants/site";
+
+const features = [
+  {
+    icon: CloudOff,
+    title: "Works without internet",
+    body: "Itineraries, saved places, budget and phrasebook are stored on-device in IndexedDB, so they stay available in airplane mode.",
+  },
+  {
+    icon: Bot,
+    title: "Hybrid AI routing",
+    body: "Firebase AI Logic prefers Chrome's on-device model and falls back to Gemini in the cloud when you are connected.",
+  },
+  {
+    icon: MapPin,
+    title: "Everything in one place",
+    body: "Trips, wallet, offline packs and saved places share one offline-first data layer that syncs to Firestore later.",
+  },
+] as const;
+
+/** Public front door — routes into the dashboard shell. */
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="flex items-center justify-between px-5 py-5 sm:px-8">
+        <Link href="/" className="flex items-center gap-2.5">
+          <span className="flex size-9 items-center justify-center rounded-xl bg-brand-accent text-brand-forest">
+            <Compass className="size-5" aria-hidden />
+          </span>
+          <span className="font-heading text-base font-semibold">
+            {siteConfig.name}
+          </span>
+        </Link>
+
+        <nav className="flex items-center gap-2">
+          <Link
+            href="/login"
+            className={`${buttonVariants({ variant: "ghost" })} hidden sm:inline-flex`}
+          >
+            Sign in
+          </Link>
+          <Link href="/dashboard" className={buttonVariants()}>
+            Open dashboard
+            <ArrowRight aria-hidden />
+          </Link>
+        </nav>
+      </header>
+
+      <main className="flex flex-1 flex-col">
+        <section className="mx-auto flex w-full max-w-5xl flex-col items-center gap-6 px-5 py-14 text-center sm:px-8 sm:py-20">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">
+            <Wifi className="size-3.5 text-brand-forest" aria-hidden />
+            Built for the Firebase Hybrid AI Hackathon 2026
+          </span>
+
+          <h1 className="max-w-3xl font-heading text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+            {siteConfig.tagline}
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+
+          <p className="max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            {siteConfig.description}
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/dashboard" className={buttonVariants({ size: "lg" })}>
+              Explore the dashboard
+              <ArrowRight aria-hidden />
+            </Link>
+            <Link
+              href="/signup"
+              className={buttonVariants({ variant: "outline", size: "lg" })}
+            >
+              Create an account
+            </Link>
+          </div>
+        </section>
+
+        <section className="mx-auto w-full max-w-5xl px-5 pb-16 sm:px-8">
+          <div className="grid gap-4 sm:grid-cols-3">
+            {features.map((feature) => (
+              <Card key={feature.title} className="gap-3">
+                <CardContent className="flex h-full flex-col gap-2 p-0">
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-brand-forest/10 text-brand-forest">
+                    <feature.icon className="size-5" aria-hidden />
+                  </span>
+                  <h2 className="font-heading text-base font-semibold">
+                    {feature.title}
+                  </h2>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {feature.body}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <p className="mt-6 text-center text-xs text-muted-foreground">
+            Offline AI and full sync are still being implemented and verified —
+            nothing here claims to work before it has been tested in Chrome.
+          </p>
+        </section>
       </main>
+
+      <footer className="border-t border-border px-5 py-6 text-center text-xs text-muted-foreground sm:px-8">
+        {siteConfig.name} · {siteConfig.description.split(":")[0]}
+      </footer>
     </div>
   );
 }
