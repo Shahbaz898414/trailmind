@@ -7,168 +7,286 @@
 /*
  * TrailMind design tokens
  * ---------------------------------------------------------------------------
- * Brand palette (see README → Design foundation):
- *   forest  #164B3B   primary surfaces, sidebar, primary buttons
- *   sage    #A8BFA8   secondary surfaces, positive states
- *   accent  #E89A55   highlights, calls to action, offline emphasis
- *   bg      #F8F8F3   page background
- *   surface #FFFFFF   cards, header, panels
- *   text    #202820   primary text
- *   muted   #737B75   secondary text
- * ---------------------------------------------------------------------------
+ * Reconciled from the Google Stitch design package
+ * (`stitch_trailmind_ui_ux_design_system`). The Stitch screens are built on a
+ * Material-3 style token set defined inline in each `code.html` via
+ * `tailwind.config` — those are the values the screenshots actually render, so
+ * they are the source of truth here (verified by sampling `screen.png` pixels).
+ *
+ *   primary            #003426   darkest green — solid CTAs, terminal panels
+ *   primary-container  #164b3b   Deep Pine — active nav pill, filled cards
+ *   surface            #f4fbf4   page background (cool sage off-white)
+ *   surface-container  #e8f0e8   grouped panels / HUD tiles
+ *   on-surface         #161d19   primary text
+ *   on-surface-variant #404944   secondary text
+ *   outline            #707974   icons, placeholders
+ *   secondary-fixed    #d1e9d0   "ready / verified" green pill
+ *   tertiary-fixed     #ffdcc2   peach emphasis pill
+ *   error              #ba1a1a   destructive + urgent
+ *
+ * Typography: Manrope (headlines), Inter (body + labels). `font-mono` is the
+ * system monospace stack — the Stitch config defines no mono family (telemetry
+ * values fall back to the browser default). Spacing, radii and the type scale
+ * mirror the Stitch config 1:1, so class names copied from the designs
+ * (`p-space-md`, `text-headline-lg`, `rounded-xl`) resolve to the same pixel
+ * values.
+ *
  * `@theme inline` makes Tailwind emit `var(--…)` directly in utilities, so the
  * runtime values below are the single source of truth for the whole app.
  */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-surface: var(--surface);
+  /* ---------------------------------------------------------------- fonts */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+  --font-heading: var(--font-manrope), var(--font-inter), ui-sans-serif,
+    system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 
-  /* Brand shortcuts: bg-brand-forest, text-brand-accent, … */
-  --color-brand-forest: var(--brand-forest);
-  --color-brand-sage: var(--brand-sage);
-  --color-brand-accent: var(--brand-accent);
+  --font-headline-lg: var(--font-manrope), var(--font-inter), ui-sans-serif,
+    system-ui, sans-serif;
+  --font-headline-md: var(--font-headline-lg);
+  --font-headline-sm: var(--font-headline-lg);
+  --font-display-lg: var(--font-headline-lg);
+  --font-display-lg-mobile: var(--font-headline-lg);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-body-lg: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-body-md: var(--font-body-lg);
+  --font-body-sm: var(--font-body-lg);
+  --font-label-lg: var(--font-body-lg);
+  --font-label-md: var(--font-body-lg);
+  --font-label-sm: var(--font-body-lg);
+
+  /* ----------------------------------------------------------- type scale */
+  --text-display-lg: 3.5rem;
+  --text-display-lg--line-height: 4rem;
+  --text-display-lg--letter-spacing: -0.03em;
+  --text-display-lg--font-weight: 800;
+
+  --text-display-lg-mobile: 2.25rem;
+  --text-display-lg-mobile--line-height: 2.75rem;
+  --text-display-lg-mobile--letter-spacing: -0.02em;
+  --text-display-lg-mobile--font-weight: 800;
+
+  --text-headline-lg: 2.5rem;
+  --text-headline-lg--line-height: 3rem;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-lg--font-weight: 700;
+
+  --text-headline-lg-mobile: 1.75rem;
+  --text-headline-lg-mobile--line-height: 2.25rem;
+  --text-headline-lg-mobile--letter-spacing: -0.01em;
+  --text-headline-lg-mobile--font-weight: 700;
+
+  --text-headline-md: 1.5rem;
+  --text-headline-md--line-height: 2rem;
+  --text-headline-md--letter-spacing: -0.01em;
+  --text-headline-md--font-weight: 600;
+
+  --text-headline-sm: 1.25rem;
+  --text-headline-sm--line-height: 1.75rem;
+  --text-headline-sm--font-weight: 600;
+
+  --text-body-lg: 1.125rem;
+  --text-body-lg--line-height: 1.75rem;
+  --text-body-lg--font-weight: 400;
+
+  --text-body-md: 1rem;
+  --text-body-md--line-height: 1.5rem;
+  --text-body-md--font-weight: 400;
+
+  --text-body-sm: 0.875rem;
+  --text-body-sm--line-height: 1.25rem;
+  --text-body-sm--font-weight: 400;
+
+  --text-label-lg: 0.875rem;
+  --text-label-lg--line-height: 1.25rem;
+  --text-label-lg--letter-spacing: 0.01em;
+  --text-label-lg--font-weight: 600;
+
+  --text-label-md: 0.75rem;
+  --text-label-md--line-height: 1rem;
+  --text-label-md--letter-spacing: 0.04em;
+  --text-label-md--font-weight: 600;
+
+  --text-label-sm: 0.6875rem;
+  --text-label-sm--line-height: 0.875rem;
+  --text-label-sm--letter-spacing: 0.06em;
+  --text-label-sm--font-weight: 700;
+
+  /* ------------------------------------------------------------- spacing */
+  /* Stitch spacing scale → `p-space-md`, `gap-space-lg`, `px-margin-desktop` */
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.5rem;
+  --spacing-space-md: 1rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-space-xl: 2.5rem;
+  --spacing-gutter: 1rem;
+  --spacing-gutter-desktop: 1.5rem;
+  --spacing-margin: 1rem;
+  --spacing-margin-desktop: 2.5rem;
+
+  /* ------------------------------------------------- Material-3 palette */
+  /* Primary */
+  --color-primary: #003426;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #164b3b;
+  --color-on-primary-container: #86baa5;
+  --color-primary-fixed: #b8eed8;
+  --color-primary-fixed-dim: #9dd2bc;
+  --color-on-primary-fixed: #002117;
+  --color-on-primary-fixed-variant: #1b4f3f;
+  --color-inverse-primary: #9dd2bc;
+
+  /* Secondary */
+  --color-secondary: #4f6450;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #d1e9d0;
+  --color-on-secondary-container: #556a56;
+  --color-secondary-fixed: #d1e9d0;
+  --color-secondary-fixed-dim: #b5cdb5;
+  --color-on-secondary-fixed: #0c1f11;
+  --color-on-secondary-fixed-variant: #374c3a;
+
+  /* Tertiary (peach / amber emphasis) */
+  --color-tertiary: #472300;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #673600;
+  --color-on-tertiary-container: #ec9e58;
+  --color-tertiary-fixed: #ffdcc2;
+  --color-tertiary-fixed-dim: #ffb77b;
+  --color-on-tertiary-fixed: #2e1500;
+  --color-on-tertiary-fixed-variant: #6d3a00;
+
+  /* Error */
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+
+  /* Surfaces */
+  --color-surface: #f4fbf4;
+  --color-surface-dim: #d4dcd5;
+  --color-surface-bright: #f4fbf4;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef6ee;
+  --color-surface-container: #e8f0e8;
+  --color-surface-container-high: #e2eae3;
+  --color-surface-container-highest: #dde5dd;
+  --color-surface-variant: #dde5dd;
+  --color-surface-tint: #356856;
+
+  /* Content */
+  --color-on-surface: #161d19;
+  --color-on-surface-variant: #404944;
+  --color-on-background: #161d19;
+  --color-outline: #707974;
+  --color-outline-variant: #c0c9c3;
+
+  /* Inverse (dark display cards, flashcards, terminal panels) */
+  --color-inverse-surface: #2b322d;
+  --color-inverse-on-surface: #ebf3eb;
+
+  /* --------------------------------------------- shadcn semantic aliases */
+  /* M3 tokens above own every name they share (`primary`, `secondary`,
+     `background`, `error`). The remaining shadcn variables map onto the same
+     palette so UI primitives stay visually identical to the designs. */
+  --color-background: #f4fbf4;
+  --color-foreground: #161d19;
+  --color-card: #ffffff;
+  --color-card-foreground: #161d19;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #161d19;
+
+  --color-primary-foreground: #ffffff;
+
+  /* `secondary` is owned by M3 (#4f6450); its foreground matches `on-secondary`. */
+  --color-secondary-foreground: #ffffff;
+
+  --color-muted: #eef6ee;
+  --color-muted-foreground: #404944;
+
+  --color-accent: #d1e9d0;
+  --color-accent-foreground: #0c1f11;
+
+  --color-destructive: #ba1a1a;
+  --color-destructive-foreground: #ffffff;
+
+  --color-border: #dde5dd;
+  --color-input: #c0c9c3;
+  --color-ring: #003426;
+
+  /* Charts reuse the brand ramps */
+  --color-chart-1: #003426;
+  --color-chart-2: #4f6450;
+  --color-chart-3: #ffb77b;
+  --color-chart-4: #707974;
+  --color-chart-5: #161d19;
+
+  /* --------------------------------------------------------- app shell */
+  /* Stitch sidebar + header are white surfaces with a Deep Pine active pill. */
+  --color-sidebar: #ffffff;
+  --color-sidebar-foreground: #161d19;
+  --color-sidebar-primary: #164b3b;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #eef6ee;
+  --color-sidebar-accent-foreground: #161d19;
+  --color-sidebar-border: #e2eae3;
+  --color-sidebar-ring: #003426;
 }
 
 :root {
-  /* Brand palette (unconditioned — identical in light and dark) */
+  /* Brand shortcuts kept for existing components. Mapped onto the Stitch
+     palette: forest = primary-container, sage = secondary-fixed,
+     accent = tertiary-fixed. */
   --brand-forest: #164b3b;
-  --brand-sage: #a8bfa8;
-  --brand-accent: #e89a55;
+  --brand-sage: #d1e9d0;
+  --brand-accent: #ffdcc2;
 
-  --background: #f8f8f3;
-  --foreground: #202820;
-
-  /* Surface = card / panel / header fill */
-  --surface: #ffffff;
-  --card: var(--surface);
-  --card-foreground: #202820;
-  --popover: var(--surface);
-  --popover-foreground: #202820;
-
-  --primary: #164b3b;
-  --primary-foreground: #f8f8f3;
-
-  --secondary: #a8bfa8;
-  --secondary-foreground: #164b3b;
-
-  --muted: #eef1e9;
-  --muted-foreground: #737b75;
-
-  --accent: #e89a55;
-  --accent-foreground: #202820;
-
-  --destructive: #b4402f;
-
-  --border: #e3e6dd;
-  --input: #e3e6dd;
-  --ring: #164b3b;
-
-  --chart-1: #164b3b;
-  --chart-2: #a8bfa8;
-  --chart-3: #e89a55;
-  --chart-4: #737b75;
-  --chart-5: #202820;
-
-  --radius: 0.75rem;
-
-  /* Sidebar = solid forest green with sage/orange accents */
-  --sidebar: #164b3b;
-  --sidebar-foreground: #f4f6ef;
-  --sidebar-primary: #e89a55;
-  --sidebar-primary-foreground: #202820;
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.14);
-  --sidebar-ring: #a8bfa8;
+  /* shadcn runtime variables (light — the only theme the designs define) */
+  --background: #f4fbf4;
+  --foreground: #161d19;
+  --card: #ffffff;
+  --card-foreground: #161d19;
+  --popover: #ffffff;
+  --popover-foreground: #161d19;
+  --primary: #003426;
+  --primary-foreground: #ffffff;
+  --secondary: #4f6450;
+  --secondary-foreground: #ffffff;
+  --muted: #eef6ee;
+  --muted-foreground: #404944;
+  --accent: #d1e9d0;
+  --accent-foreground: #0c1f11;
+  --destructive: #ba1a1a;
+  --border: #dde5dd;
+  --input: #c0c9c3;
+  --ring: #003426;
+  --surface: #f4fbf4;
+  --radius: 0.5rem;
 }
 
 .dark {
-  --brand-forest: #164b3b;
-  --brand-sage: #a8bfa8;
-  --brand-accent: #e89a55;
-
-  --background: #10140f;
-  --foreground: #f2f4ee;
-
-  --surface: #171c16;
-  --card: var(--surface);
-  --card-foreground: #f2f4ee;
-  --popover: var(--surface);
-  --popover-foreground: #f2f4ee;
-
-  --primary: #a8bfa8;
-  --primary-foreground: #10140f;
-
-  --secondary: #2c3a2f;
-  --secondary-foreground: #dfe7dc;
-
-  --muted: #1e241d;
-  --muted-foreground: #9aa39b;
-
-  --accent: #e89a55;
-  --accent-foreground: #10140f;
-
-  --destructive: #e2705d;
-
-  --border: #2a312a;
-  --input: #2a312a;
-  --ring: #a8bfa8;
-
-  --chart-1: #a8bfa8;
-  --chart-2: #e89a55;
-  --chart-3: #7fa890;
-  --chart-4: #9aa39b;
-  --chart-5: #f2f4ee;
-
-  --sidebar: #0d110c;
-  --sidebar-foreground: #f4f6ef;
-  --sidebar-primary: #e89a55;
-  --sidebar-primary-foreground: #10140f;
-  --sidebar-accent: rgba(255, 255, 255, 0.08);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.12);
-  --sidebar-ring: #a8bfa8;
+  /* No dark screens ship in the Stitch package; this fallback inverts the
+     M3 set so a `.dark` root stays legible rather than unreadable. */
+  --background: #161d19;
+  --foreground: #ebf3eb;
+  --card: #2b322d;
+  --card-foreground: #ebf3eb;
+  --popover: #2b322d;
+  --popover-foreground: #ebf3eb;
+  --primary: #b8eed8;
+  --primary-foreground: #002117;
+  --secondary: #d1e9d0;
+  --secondary-foreground: #0c1f11;
+  --muted: #2b322d;
+  --muted-foreground: #c0c9c3;
+  --accent: #164b3b;
+  --accent-foreground: #b8eed8;
+  --destructive: #ffdad6;
+  --border: #404944;
+  --input: #404944;
+  --ring: #b8eed8;
+  --surface: #161d19;
 }
 
 @layer base {

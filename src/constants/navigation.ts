@@ -1,9 +1,11 @@
 import {
+  Bell,
   Bot,
   Bookmark,
+  Compass,
   Download,
-  LayoutDashboard,
   Languages,
+  LayoutDashboard,
   Map,
   Settings,
   Wallet,
@@ -11,66 +13,71 @@ import {
 
 import type { NavGroup, NavItem } from "@/types/navigation";
 
-/** Primary navigation for the dashboard sidebar. Order = display order. */
+/** Primary navigation for the dashboard sidebar matching Google Stitch designs */
 export const dashboardNav: NavItem[] = [
   {
     label: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
-    description: "Overview of your trips, plans and offline status.",
+    description: "Overview of active expeditions, satellite telemetry and offline readiness.",
   },
   {
-    label: "Trips",
+    label: "My Trips",
     href: "/trips",
     icon: Map,
-    description: "Create and manage itineraries for every journey.",
+    badge: "3",
+    badgeVariant: "secondary",
+    description: "Expedition library, route blueprints and active waypoint packages.",
   },
   {
-    label: "Assistant",
+    label: "AI Travel Assistant",
     href: "/assistant",
     icon: Bot,
-    description: "Ask questions online or on-device when you are offline.",
+    badge: "Gen2",
+    badgeVariant: "accent",
+    description: "Hybrid cloud and on-device offline travel reasoning assistant.",
   },
   {
-    label: "Wallet",
+    label: "Travel Wallet",
     href: "/wallet",
     icon: Wallet,
-    description: "Track spending, budgets and currency conversions.",
+    description: "Cryptographic passes, Shinkansen tickets, Ryokan vouchers and offline QR codes.",
   },
   {
-    label: "Language",
+    label: "Language Assistant",
     href: "/language",
     icon: Languages,
-    description: "Offline phrasebook and quick translations.",
+    description: "Bilingual audio studio, phonetic furigana and taxi flashcards.",
   },
   {
-    label: "Downloads",
+    label: "Offline Downloads",
     href: "/downloads",
     icon: Download,
-    description: "Manage offline packs for the places you visit.",
+    badge: "12 GB",
+    badgeVariant: "muted",
+    description: "1:25k topo contour maps, on-device models and vector databases.",
   },
   {
-    label: "Saved places",
+    label: "Saved Places",
     href: "/saved-places",
     icon: Bookmark,
-    description: "Everything you have bookmarked, in one list.",
+    description: "Off-grid bookmarks, cached elevation profiles and topo HUD waypoints.",
   },
   {
     label: "Settings",
     href: "/settings",
     icon: Settings,
-    description: "Account, sync, appearance and data controls.",
+    description: "System preferences, edge NPU benchmarks, hardware relays and satellite sync.",
   },
 ];
 
-/** Grouped navigation, ready for a sidebar with section headings. */
+/** Grouped navigation for layouts that display category sections */
 export const navGroups: NavGroup[] = [
-  { label: "Explore", items: dashboardNav.slice(0, 4) },
-  { label: "Offline tools", items: dashboardNav.slice(4, 7) },
-  { label: "General", items: dashboardNav.slice(7) },
+  { label: "Expedition", items: dashboardNav.slice(0, 3) },
+  { label: "Field Tools", items: dashboardNav.slice(3, 7) },
+  { label: "System", items: dashboardNav.slice(7) },
 ];
 
-/** Convenience lookup for building a page from a nav item. */
 export function findNavItem(href: string): NavItem | undefined {
   return dashboardNav.find((item) => item.href === href);
 }

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Manrope } from "next/font/google";
 
 import "./globals.css";
 
@@ -7,11 +7,20 @@ import { ServiceWorkerRegistration } from "@/components/offline/service-worker-r
 import { siteConfig } from "@/constants/site";
 
 /**
- * Inter is loaded through `next/font` so it is self-hosted and preloaded —
- * the CSS variable it sets is what `--font-sans` resolves to in globals.css.
+ * Both families are loaded through `next/font` so they are self-hosted and
+ * preloaded — the CSS variables they set are what the `--font-*` token families
+ * in globals.css resolve to:
+ *   Inter   → body- and label- styles (UI copy, micro-labels)
+ *   Manrope → headline- and display- styles (headings, big numeric values)
  */
 const inter = Inter({
   variable: "--font-inter",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
   display: "swap",
 });
@@ -52,7 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${inter.variable} h-full antialiased`}
+      className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
         {children}
