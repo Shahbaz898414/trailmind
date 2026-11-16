@@ -14,12 +14,17 @@ import {
   Smartphone,
 } from "lucide-react";
 
+import { sendPasswordReset, validateCredentials } from "@/lib/firebase/auth";
+
 export default function ForgotPasswordPage() {
   const [activeTab, setActiveTab] = useState<"seed" | "email">("seed");
   const [seedWords, setSeedWords] = useState<string[]>(Array(12).fill(""));
-  const [email, setEmail] = useState("alex@example.com");
+  const [email, setEmail] = useState("");
   const [isRecovering, setIsRecovering] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  /** Address the reset link was actually sent to (shown on success). */
+  const [sentTo, setSentTo] = useState("");
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   const handleSeedChange = (index: number, val: string) => {
     const updated = [...seedWords];
@@ -27,13 +32,43 @@ export default function ForgotPasswordPage() {
     setSeedWords(updated);
   };
 
-  const handleRecovery = (e: React.FormEvent) => {
+  const handleRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
+    setRecoveryError(null);
+
+    // Seed-phrase recovery is not a real capability of this build — say so
+    // instead of simulating a successful vault re-key.
+    if (activeTab === "seed") {
+      setRecoveryError(
+        "Seed-phrase recovery isn't available in this build. TrailMind accounts are recovered by email — switch to the Cloud Security Token tab."
+      );
+      return;
+    }
+
+    const validationError = validateCredentials(email, "", {
+      requirePassword: false,
+    });
+    if (validationError) {
+      setRecoveryError(validationError);
+      return;
+    }
+
     setIsRecovering(true);
-    setTimeout(() => {
-      setIsRecovering(false);
+    try {
+      // Firebase deliberately confirms for unknown addresses too, so the
+      // success state is identical either way (no account enumeration).
+      await sendPasswordReset(email);
+      setSentTo(email.trim());
       setIsSuccess(true);
-    }, 700);
+    } catch (error) {
+      setRecoveryError(
+        error instanceof Error
+          ? error.message
+          : "Couldn't send the recovery email. Please try again."
+      );
+    } finally {
+      setIsRecovering(false);
+    }
   };
 
   return (
@@ -98,10 +133,13 @@ export default function ForgotPasswordPage() {
                 <ShieldCheck className="size-6" />
               </div>
               <h2 className="font-heading text-xl font-bold text-primary">
-                Cryptographic Keys Restored
+                Recovery Email Sent
               </h2>
               <p className="text-xs text-on-surface-variant max-w-md">
-                Your local vault session has been successfully re-keyed. You can now access all offline cached expeditions.
+                If an account exists for{" "}
+                <span className="font-semibold text-on-surface">{sentTo}</span>
+                , a single-use reset link is on its way. Check your inbox and
+                spam folder — the link expires after a short time.
               </p>
               <Link
                 href="/login"
@@ -143,7 +181,9 @@ export default function ForgotPasswordPage() {
                   </div>
 
                   <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                    Hint for demo prototype: Enter any 12 words or click below to simulate recovery.
+                    Seed-phrase recovery is not implemented in this build —
+                    TrailMind accounts are recovered by email. Use the Cloud
+                    Security Token tab instead.
                   </p>
                 </>
               ) : (
@@ -171,12 +211,22 @@ export default function ForgotPasswordPage() {
                 </div>
               )}
 
+              {recoveryError ? (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2.5 rounded-lg border border-border bg-secondary-container/60 p-3 text-xs font-semibold leading-relaxed text-on-secondary-container"
+                >
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>{recoveryError}</span>
+                </div>
+              ) : null}
+
               <button
                 type="submit"
                 disabled={isRecovering}
                 className="w-full mt-2 flex items-center justify-center gap-2 py-3.5 px-6 rounded-lg bg-primary hover:bg-primary-container text-white font-semibold text-xs tracking-wide shadow-md transition-all cursor-pointer disabled:opacity-75"
               >
-                <span>{isRecovering ? "Verifying Keys..." : "Restore Cryptographic Keys"}</span>
+                <span>{isRecovering ? "Sending Recovery Link..." : "Restore Cryptographic Keys"}</span>
                 <ArrowRight className="size-4" />
               </button>
             </form>

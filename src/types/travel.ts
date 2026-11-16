@@ -10,7 +10,12 @@
  * because that is what both IndexedDB and Firestore handle well.
  */
 
-export type TripStatus = "planning" | "upcoming" | "in-progress" | "completed";
+/**
+ * Trip lifecycle as the UI presents it (the trips page filters on these
+ * exact values). `draft` replaced the earlier `planning` value so Firestore,
+ * Dexie and the UI share one canonical enum.
+ */
+export type TripStatus = "draft" | "upcoming" | "in-progress" | "completed";
 
 /** Visual theme used for a trip's cover block until real photos are added. */
 export type CoverTheme = "forest" | "sage" | "accent" | "dusk";

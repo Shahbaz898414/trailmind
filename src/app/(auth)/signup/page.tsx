@@ -16,28 +16,66 @@ import {
   Lock,
   Mail,
   Mountain,
+  ShieldAlert,
   ShieldCheck,
   User,
   Zap,
 } from "lucide-react";
 
+import { signUpWithEmail, validateCredentials } from "@/lib/firebase/auth";
+import { ensureUserProfile } from "@/services/profile";
+
 export default function SignupPage() {
   const router = useRouter();
-  const [fullName, setFullName] = useState("Alex Morgan");
-  const [email, setEmail] = useState("alex@example.com");
-  const [password, setPassword] = useState("AlpineExpedition2026");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [travelStyle, setTravelStyle] = useState("adventure");
   const [initializeVault, setInitializeVault] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError(null);
+
+    const validationError = validateCredentials(email, password);
+    if (validationError) {
+      setAuthError(validationError);
+      return;
+    }
+    if (!fullName.trim()) {
+      setAuthError("Enter your name.");
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
+      const user = await signUpWithEmail(email, password, fullName);
+
+      // Create the Firestore profile now (with the chosen travel style).
+      // Idempotent: AuthProvider also ensures the profile on auth change, and
+      // both writes merge safely. A failure here is not fatal — the provider
+      // retries on every auth-state change — so sign-up still succeeds.
+      try {
+        await ensureUserProfile(user, { travelStyle });
+      } catch (error) {
+        console.warn(
+          "[TrailMind] profile creation deferred to AuthProvider:",
+          error
+        );
+      }
+
       router.push("/onboarding");
-    }, 600);
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Sign-up failed. Please try again."
+      );
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -240,6 +278,17 @@ export default function SignupPage() {
                     </span>
                   </label>
                 </div>
+
+                {/* Sign-up error — role=alert for screen readers */}
+                {authError ? (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2.5 rounded-lg border border-border bg-secondary-container/60 p-3 text-xs font-semibold leading-relaxed text-on-secondary-container"
+                  >
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span>{authError}</span>
+                  </div>
+                ) : null}
 
                 <button
                   type="submit"

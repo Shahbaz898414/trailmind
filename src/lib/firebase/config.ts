@@ -26,6 +26,9 @@ const firebaseEnvSchema = z.object({
   NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY: z.string().trim().min(1).optional(),
   NEXT_PUBLIC_FIREBASE_AI_MODEL: z.string().trim().min(1).optional(),
   NEXT_PUBLIC_ENABLE_SERVICE_WORKER: z.enum(["true", "false"]).optional(),
+  NEXT_PUBLIC_USE_FIREBASE_EMULATORS: z.enum(["true", "false"]).optional(),
+  /** Host for the local Firebase Emulator Suite (Auth/Firestore/Storage). */
+  NEXT_PUBLIC_FIREBASE_EMULATOR_HOST: z.string().trim().min(1).optional(),
 });
 
 /**
@@ -47,6 +50,10 @@ const env = firebaseEnvSchema.safeParse({
     process.env.NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY,
   NEXT_PUBLIC_FIREBASE_AI_MODEL: process.env.NEXT_PUBLIC_FIREBASE_AI_MODEL,
   NEXT_PUBLIC_ENABLE_SERVICE_WORKER: process.env.NEXT_PUBLIC_ENABLE_SERVICE_WORKER,
+  NEXT_PUBLIC_USE_FIREBASE_EMULATORS:
+    process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS,
+  NEXT_PUBLIC_FIREBASE_EMULATOR_HOST:
+    process.env.NEXT_PUBLIC_FIREBASE_EMULATOR_HOST,
 });
 
 const values = env.success ? env.data : {};
@@ -119,3 +126,24 @@ export const firebaseAiModel =
  */
 export const isServiceWorkerEnabled =
   values.NEXT_PUBLIC_ENABLE_SERVICE_WORKER === "true";
+
+/**
+ * When true, every Firebase client SDK (Auth, Firestore, Storage) connects to
+ * the local Emulator Suite instead of production. Requires the emulators to
+ * be running (`npm run emulators`). Off unless explicitly set to "true".
+ *
+ * Never enable this in a production build — guard deployments accordingly.
+ */
+export const useFirebaseEmulators =
+  values.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === "true";
+
+/** Host the emulators listen on. Defaults to the standard `127.0.0.1`. */
+export const firebaseEmulatorHost =
+  values.NEXT_PUBLIC_FIREBASE_EMULATOR_HOST ?? "127.0.0.1";
+
+/** Emulator ports — match `firebase.json` when you change them here. */
+export const emulatorPorts = {
+  auth: 9099,
+  firestore: 8080,
+  storage: 9199,
+} as const;

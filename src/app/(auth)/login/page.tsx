@@ -1,8 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  browserLocalPersistence,
+  browserSessionPersistence,
+  setPersistence,
+} from "firebase/auth";
 import {
   ArrowRight,
   CheckCircle2,
@@ -14,34 +19,130 @@ import {
   Lock,
   Mail,
   Mountain,
+  ShieldAlert,
   ShieldCheck,
   TrendingUp,
   Zap,
 } from "lucide-react";
 
+import { useAuth } from "@/components/auth/auth-provider";
+import {
+  signInWithEmail,
+  signInWithGoogle,
+  validateCredentials,
+} from "@/lib/firebase/auth";
+import { getFirebaseAuth } from "@/lib/firebase/client";
+
+/** Google "G" mark — lucide-react ships no brand icons. */
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={className}>
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.85-.08-1.66-.22-2.45H12v4.63h6.45a5.52 5.52 0 0 1-2.39 3.62v3h3.86c2.26-2.09 3.6-5.17 3.6-8.8Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.96-1.08 7.94-2.92l-3.86-3c-1.08.73-2.46 1.16-4.08 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09A12 12 0 0 0 12 24Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.28A7.2 7.2 0 0 1 4.9 12c0-.79.14-1.56.37-2.28V6.63H1.29A12 12 0 0 0 0 12c0 1.94.47 3.77 1.29 5.37l3.98-3.09Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.74c1.77 0 3.35.61 4.6 1.8l3.45-3.45C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.69 1.29 6.63l3.98 3.09C6.22 6.87 8.87 4.74 12 4.74Z"
+      />
+    </svg>
+  );
+}
+
+/**
+ * Reads the intended post-sign-in destination from `?next=`.
+ *
+ * Only same-origin paths are accepted — never an external URL (open-redirect).
+ * Reads `window` directly (client-only) instead of `useSearchParams()`, so no
+ * Suspense boundary is needed during prerendering.
+ */
+function readSafeNextPath(): string {
+  if (typeof window === "undefined") return "/dashboard";
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//")
+    ? next
+    : "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("alex@example.com");
-  const [password, setPassword] = useState("AlpineExpedition2026");
+  const { status } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [keepOffline, setKeepOffline] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Already signed in (session restored, or landed here while authenticated).
+  useEffect(() => {
+    if (status === "authenticated") router.replace(readSafeNextPath());
+  }, [status, router]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError(null);
+
+    const validationError = validateCredentials(email, password);
+    if (validationError) {
+      setAuthError(validationError);
+      return;
+    }
+
     setIsLoading(true);
-    setTimeout(() => {
+    try {
+      // Honour the "keep me signed in" control: default Firebase persistence
+      // keeps the session across restarts; unchecking limits it to this tab
+      // session. (Only ever called while signed out, as on this page.)
+      const auth = getFirebaseAuth();
+      if (auth) {
+        await setPersistence(
+          auth,
+          keepOffline ? browserLocalPersistence : browserSessionPersistence
+        );
+      }
+      await signInWithEmail(email, password);
+      router.replace(readSafeNextPath());
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Sign-in failed. Please try again."
+      );
       setIsLoading(false);
-      router.push("/dashboard");
-    }, 600);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setAuthError(null);
+    setIsLoading(true);
+    try {
+      await signInWithGoogle();
+      router.replace(readSafeNextPath());
+    } catch (error) {
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Google sign-in failed. Please try again."
+      );
+      setIsLoading(false);
+    }
   };
 
   const handleBiometricAuth = () => {
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      router.push("/dashboard");
-    }, 400);
+    // Honest state: no WebAuthn/passkey backend is configured in this build,
+    // so the button explains itself instead of pretending to succeed.
+    setAuthError(
+      "Passkeys (FIDO2) aren't configured in this build yet — sign in with your email and password below."
+    );
   };
 
   return (
@@ -148,6 +249,18 @@ export default function LoginPage() {
                 </span>
               </button>
 
+              {/* Google sign-in — requires the Google provider to be enabled
+                  in Firebase Console → Authentication → Sign-in method. */}
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
+                className="mt-3 w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl bg-white hover:bg-surface-container-low border border-outline-variant/60 text-on-surface font-semibold text-sm transition-all shadow-sm group cursor-pointer disabled:opacity-75"
+              >
+                <GoogleIcon className="size-4" />
+                <span>Continue with Google</span>
+              </button>
+
               <div className="relative my-6 flex items-center">
                 <div className="flex-grow border-t border-border" />
                 <span className="flex-shrink mx-4 text-xs uppercase tracking-wider text-on-surface-variant/70 font-semibold font-mono">
@@ -230,6 +343,17 @@ export default function LoginPage() {
                     </span>
                   </label>
                 </div>
+
+                {/* Authentication error — role=alert for screen readers */}
+                {authError ? (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2.5 rounded-lg border border-border bg-secondary-container/60 p-3 text-xs font-semibold leading-relaxed text-on-secondary-container"
+                  >
+                    <ShieldAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span>{authError}</span>
+                  </div>
+                ) : null}
 
                 {/* Submit Button */}
                 <button

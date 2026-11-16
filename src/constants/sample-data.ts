@@ -47,7 +47,7 @@ export const sampleTrips: Trip[] = [
     countryCode: "CL",
     startDate: "2026-11-04",
     endDate: "2026-11-14",
-    status: "planning",
+    status: "draft",
     cover: "forest",
     budget: { currency: "USD", total: 2100, spent: 240 },
     placesCount: 6,

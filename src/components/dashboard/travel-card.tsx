@@ -23,7 +23,7 @@ const coverStyles: Record<CoverTheme, string> = {
 };
 
 const statusLabels: Record<Trip["status"], string> = {
-  planning: "Planning",
+  draft: "Draft",
   upcoming: "Upcoming",
   "in-progress": "In progress",
   completed: "Completed",
@@ -33,7 +33,7 @@ const statusVariant: Record<
   Trip["status"],
   "secondary" | "outline" | "default" | "ghost"
 > = {
-  planning: "outline",
+  draft: "outline",
   upcoming: "secondary",
   "in-progress": "default",
   completed: "ghost",

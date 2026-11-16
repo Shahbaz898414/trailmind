@@ -2,9 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Bell, Cpu, Menu, Search, Wifi } from "lucide-react";
+import { Bell, Cpu, LogOut, Menu, Search, Wifi } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/auth-provider";
 import { currentUser } from "@/data/user";
 import { sampleNotificationsList } from "@/data/notifications";
 
@@ -14,6 +15,7 @@ type HeaderProps = {
 };
 
 export function Header({ onOpenMenu }: HeaderProps) {
+  const { signOut, status } = useAuth();
   const unreadCount = sampleNotificationsList.filter((n) => !n.read).length;
 
   return (
@@ -88,6 +90,20 @@ export function Header({ onOpenMenu }: HeaderProps) {
             {currentUser.name}
           </span>
         </Link>
+
+        {/* Sign out — AuthProvider flips to "unauthenticated" and AuthGuard
+            redirects to /login?next=… (intended path preserved). */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => void signOut()}
+          disabled={status !== "authenticated"}
+          aria-label="Sign out"
+          title="Sign out"
+          className="text-on-surface-variant hover:text-error"
+        >
+          <LogOut className="size-4" />
+        </Button>
       </div>
     </header>
   );

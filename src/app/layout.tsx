@@ -4,6 +4,7 @@ import { Inter, Manrope } from "next/font/google";
 import "./globals.css";
 
 import { ServiceWorkerRegistration } from "@/components/offline/service-worker-registration";
+import { AuthProvider } from "@/components/auth/auth-provider";
 import { siteConfig } from "@/constants/site";
 
 /**
@@ -64,7 +65,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${manrope.variable} h-full antialiased`}
     >
       <body className="flex min-h-full flex-col">
-        {children}
+        {/* Global auth session: restores Firebase Auth state on refresh and
+            exposes it to every screen (login redirect, header, guard). */}
+        <AuthProvider>{children}</AuthProvider>
         {/* Registers public/sw.js only when NEXT_PUBLIC_ENABLE_SERVICE_WORKER=true */}
         <ServiceWorkerRegistration />
       </body>

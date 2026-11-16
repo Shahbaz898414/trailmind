@@ -1,19 +1,22 @@
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
-import { getAuth, type Auth } from "firebase/auth";
+import { getAuth, connectAuthEmulator, type Auth } from "firebase/auth";
 import {
   getFirestore,
   initializeFirestore,
+  connectFirestoreEmulator,
   persistentLocalCache,
   persistentMultipleTabManager,
   type Firestore,
 } from "firebase/firestore";
-import {
-  initializeAppCheck,
-  ReCaptchaV3Provider,
-  type AppCheck,
-} from "firebase/app-check";
+import { getStorage, connectStorageEmulator, type FirebaseStorage } from "firebase/storage";
 
-import { appCheckSiteKey, firebaseConfig, isFirebaseConfigured } from "./config";
+import {
+  emulatorPorts,
+  firebaseEmulatorHost,
+  firebaseConfig,
+  isFirebaseConfigured,
+  useFirebaseEmulators,
+} from "./config";
 
 /**
  * Firebase client entry point.
@@ -30,19 +33,26 @@ import { appCheckSiteKey, firebaseConfig, isFirebaseConfigured } from "./config"
  *   ✓ Firebase App          (client.ts)
  *   ✓ Cloud Firestore       (client.ts — with offline persistence enabled)
  *   ✓ Firebase Auth         (client.ts)
+ *   ✓ Firebase Storage      (client.ts)
  *   ✓ Firebase AI Logic     (see `src/lib/ai/hybrid-model.ts`)
- *   ✓ Firebase App Check    (client.ts — only when a site key is provided)
- *   ✗ Storage / Analytics / Messaging — not wired yet, add when needed
+ *   ✓ Firebase App Check    (see `src/lib/firebase/app-check.ts` — opt-in)
  *
  * App data lives in Dexie (`src/lib/offline/db.ts`) first and syncs to
  * Firestore later; the service worker (`public/sw.js`) caches app *assets*
  * only. Those two stores are deliberately kept separate.
+ *
+ * When `NEXT_PUBLIC_USE_FIREBASE_EMULATORS=true`, every getter wires the
+ * service to the local Emulator Suite exactly once (see `emulatorConnections`).
  */
 
 let app: FirebaseApp | null = null;
 let auth: Auth | null = null;
 let db: Firestore | null = null;
-let appCheck: AppCheck | null = null;
+let storage: FirebaseStorage | null = null;
+
+/** Services already pointed at the emulator — `connect*Emulator` throws on
+ *  a second call, so each service is recorded here after the first connect. */
+const emulatorConnections = new Set<"auth" | "firestore" | "storage">();
 
 /** Returns the default Firebase app, or `null` when configuration is missing. */
 export function getFirebaseApp(): FirebaseApp | null {
@@ -60,7 +70,15 @@ export function getFirebaseApp(): FirebaseApp | null {
 export function getFirebaseAuth(): Auth | null {
   const firebaseApp = getFirebaseApp();
   if (!firebaseApp) return null;
-  if (!auth) auth = getAuth(firebaseApp);
+  if (!auth) {
+    auth = getAuth(firebaseApp);
+    if (useFirebaseEmulators && !emulatorConnections.has("auth")) {
+      emulatorConnections.add("auth");
+      connectAuthEmulator(auth, `http://${firebaseEmulatorHost}:${emulatorPorts.auth}`, {
+        disableWarnings: true,
+      });
+    }
+  }
   return auth;
 }
 
@@ -88,38 +106,32 @@ export function getFirebaseDb(): Firestore | null {
       // Already initialised for this app — fall through to getFirestore().
     }
     db = getFirestore(firebaseApp);
+    if (useFirebaseEmulators && !emulatorConnections.has("firestore")) {
+      emulatorConnections.add("firestore");
+      connectFirestoreEmulator(db, firebaseEmulatorHost, emulatorPorts.firestore);
+    }
   }
   return db;
 }
 
 /**
- * Initialises Firebase App Check. **Opt-in, never called automatically.**
+ * Firebase Storage instance for travel-document uploads.
  *
- * Returns `null` unless `NEXT_PUBLIC_FIREBASE_APPCHECK_SITE_KEY` is set, and
- * `null` on subsequent calls (App Check can only be initialised once per app).
- *
- * Call this from a client component once — e.g. from the dashboard layout —
- * after you have registered the web app in the Firebase console.
- *
- * Note: this SDK version only exposes the reCAPTCHA v3 and reCAPTCHA
- * Enterprise providers; there is no exported debug provider.
+ * Returns `null` when Firebase is not configured. Access to objects is
+ * governed by `storage.rules` — never build a URL you have not verified the
+ * caller is allowed to read.
  */
-export function initializeFirebaseAppCheck(): AppCheck | null {
-  if (appCheck) return appCheck;
-
+export function getFirebaseStorage(): FirebaseStorage | null {
   const firebaseApp = getFirebaseApp();
-  if (!firebaseApp || !appCheckSiteKey) return null;
-
-  try {
-    appCheck = initializeAppCheck(firebaseApp, {
-      provider: new ReCaptchaV3Provider(appCheckSiteKey),
-      isTokenAutoRefreshEnabled: true,
-    });
-  } catch (error) {
-    console.warn("[TrailMind] App Check could not be initialised:", error);
-    return null;
+  if (!firebaseApp) return null;
+  if (!storage) {
+    storage = getStorage(firebaseApp);
+    if (useFirebaseEmulators && !emulatorConnections.has("storage")) {
+      emulatorConnections.add("storage");
+      connectStorageEmulator(storage, firebaseEmulatorHost, emulatorPorts.storage);
+    }
   }
-  return appCheck;
+  return storage;
 }
 
 /** True when the Firebase web config is complete enough to initialise. */
