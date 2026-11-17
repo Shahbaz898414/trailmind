@@ -2,13 +2,17 @@ import Dexie, { type EntityTable } from "dexie";
 
 import type {
   ChatMessage,
-  ItineraryItem,
   OfflinePack,
-  SavedPlace,
   SyncOperation,
-  Trip,
   WalletEntry,
 } from "@/types/travel";
+import type { TripRecord } from "@/services/trips";
+import type { ActivityRecord } from "@/services/itinerary";
+import type { SavedPlaceRecord } from "@/services/saved-places";
+import type { TravelDocumentRecord } from "@/services/documents";
+import type { NotificationRecord } from "@/services/notifications";
+import type { SavedPhraseRecord } from "@/services/language";
+import type { ConversationRecord } from "@/services/conversations";
 
 /**
  * Offline-first local data store — IndexedDB, wrapped by Dexie.
@@ -23,29 +27,49 @@ import type {
  * Deliberately NOT stored here:
  *   - auth tokens, passwords or API keys
  *   - anything the user did not create in the app
- *   - cached documents fetched from private/scoped sources
+ *   - document file BYTES (uploads genuinely require the network; metadata
+ *     is mirrored here, bytes are not — see `offline/documents.ts`)
  *
- * Firestore (see `src/lib/firebase/client.ts`) is the eventual sync target;
- * `syncQueue` is the outbox of mutations waiting to be pushed.
+ * Role in the data plane (see `docs/OFFLINE_SYNC.md`):
+ *   - **Mirror** of every Firestore record the app has read (the offline
+ *     source of truth for reads while disconnected).
+ *   - **Home of queued writes** (`syncQueue`) created while offline; the
+ *     sync engine drains them into Firestore with conflict detection.
+ *   - **Local-only records** (chat messages written while Firebase is
+ *     unconfigured) until a sync path exists.
  * ---------------------------------------------------------------------------
  *
  * Browser-only: call `getOfflineDb()` from Client Components (or from code
  * that has already checked `isOfflineStoreAvailable()`).
+ *
+ * Table record types are the SERVICE record shapes (type-only imports — no
+ * runtime cycle), so a mirrored row round-trips through the same validation
+ * the Firestore path uses.
  */
+
+/** An activity as mirrored locally — the trip it belongs to is path-derived
+ *  in Firestore, so the mirror stores it explicitly. */
+export type CachedActivity = ActivityRecord & { tripId: string };
 
 /** Bump when the schema changes and add a matching `.stores()` clause. */
 export const OFFLINE_DB_NAME = "trailmind";
-export const OFFLINE_DB_VERSION = 1;
+export const OFFLINE_DB_VERSION = 2;
 
 export class TrailMindDatabase extends Dexie {
-  trips!: EntityTable<Trip, "id">;
-  savedPlaces!: EntityTable<SavedPlace, "id">;
-  itineraryItems!: EntityTable<ItineraryItem, "id">;
+  trips!: EntityTable<TripRecord, "id">;
+  savedPlaces!: EntityTable<SavedPlaceRecord, "id">;
+  itineraryItems!: EntityTable<CachedActivity, "id">;
   offlinePacks!: EntityTable<OfflinePack, "id">;
   walletEntries!: EntityTable<WalletEntry, "id">;
   chatMessages!: EntityTable<ChatMessage, "id">;
   /** Outbox of local mutations not yet synced to Firestore. */
   syncQueue!: EntityTable<SyncOperation, "id">;
+  /* --- v2 mirrors (Phase 5) --------------------------------------------- */
+  phrases!: EntityTable<SavedPhraseRecord, "id">;
+  notifications!: EntityTable<NotificationRecord, "id">;
+  conversations!: EntityTable<ConversationRecord, "id">;
+  /** Travel-wallet document METADATA only — bytes live in Storage. */
+  documentsMeta!: EntityTable<TravelDocumentRecord, "id">;
 
   constructor() {
     super(OFFLINE_DB_NAME);
@@ -57,8 +81,12 @@ export class TrailMindDatabase extends Dexie {
       itineraryItems: "id, tripId, day, [tripId+day]",
       offlinePacks: "id, tripId, status",
       walletEntries: "id, tripId, date, category",
-      chatMessages: "id, tripId, createdAt",
+      chatMessages: "id, conversationId, tripId, createdAt",
       syncQueue: "id, entity, createdAt",
+      phrases: "id, createdAt, category, language",
+      notifications: "id, createdAt, read",
+      conversations: "id, updatedAt, createdAt, tripId",
+      documentsMeta: "id, createdAt, category, tripId",
     });
   }
 }
@@ -100,5 +128,9 @@ export async function clearOfflineData(): Promise<void> {
     db.walletEntries.clear(),
     db.chatMessages.clear(),
     db.syncQueue.clear(),
+    db.phrases.clear(),
+    db.notifications.clear(),
+    db.conversations.clear(),
+    db.documentsMeta.clear(),
   ]);
 }

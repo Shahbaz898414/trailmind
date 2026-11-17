@@ -16,11 +16,28 @@ import {
 import { z } from "zod";
 
 import {
+  isTransientFirestoreError,
   mapFirestoreError,
   requireDb,
   timestampToIso,
 } from "@/lib/firebase/firestore";
-import { parseOrThrow } from "@/lib/validation";
+import { isOfflineForData } from "@/lib/offline/connectivity";
+import {
+  dropCachedActivity,
+  dropCachedItinerary,
+  mirrorActivity,
+  mirrorActivities,
+  queueActivityCreate,
+  queueActivityDelete,
+  queueActivityUpdate,
+  queueItineraryClear,
+  queueItineraryReorder,
+  readCachedActivities,
+  readCachedActivity,
+  mirrorReorder,
+} from "@/lib/offline/itinerary";
+import { readCachedTrip } from "@/lib/offline/trips";
+import { parseOrThrow, providedFields } from "@/lib/validation";
 import { getTrip } from "@/services/trips";
 
 /**
@@ -183,6 +200,9 @@ function activityRef(uid: string, tripId: string, activityId: string) {
  * caller doesn't supply one. Verifies the trip exists first, so you can't
  * add activities to a deleted trip.
  *
+ * Offline: trip existence and order are computed from the mirror; the
+ * activity is stored locally and queued (honestly un-synced until flush).
+ *
  * @throws Error with a UI-safe message.
  */
 export async function createActivity(
@@ -191,23 +211,58 @@ export async function createActivity(
   input: ActivityInput
 ): Promise<ActivityRecord> {
   try {
-    const trip = await getTrip(uid, tripId);
-    if (!trip) throw new Error("That trip no longer exists.");
+    const offline = isOfflineForData();
+
+    const trip = offline ? await readCachedTrip(tripId) : await getTrip(uid, tripId);
+    if (!trip) {
+      throw new Error(
+        offline
+          ? "This trip isn't saved on this device — reconnect to add activities."
+          : "That trip no longer exists."
+      );
+    }
 
     const data = parseOrThrow(activityInputSchema, input);
 
     let order = data.order;
     if (order === undefined) {
-      const existing = await getDocs(
-        query(itineraryRef(uid, tripId), where("day", "==", data.day))
-      );
-      const orders = existing.docs
-        .map((d) => Number(d.data().order))
-        .filter((n) => Number.isFinite(n));
-      order = orders.length > 0 ? Math.max(...orders) + 1 : 0;
+      if (offline) {
+        const existing = (await readCachedActivities(tripId)).filter(
+          (a) => a.day === data.day
+        );
+        order =
+          existing.length > 0
+            ? Math.max(...existing.map((a) => a.order)) + 1
+            : 0;
+      } else {
+        const existing = await getDocs(
+          query(itineraryRef(uid, tripId), where("day", "==", data.day))
+        );
+        const orders = existing.docs
+          .map((d) => Number(d.data().order))
+          .filter((n) => Number.isFinite(n));
+        order = orders.length > 0 ? Math.max(...orders) + 1 : 0;
+      }
     }
 
     const ref = doc(itineraryRef(uid, tripId));
+    const now = new Date().toISOString();
+    const record: ActivityRecord = {
+      id: ref.id,
+      ...data,
+      image: data.image ?? null,
+      solarEphemeris: data.solarEphemeris ?? null,
+      notes: data.notes ?? null,
+      audioKey: data.audioKey ?? null,
+      order,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    if (offline) {
+      return queueActivityCreate(uid, tripId, record);
+    }
+
     const stored = {
       ...data,
       image: data.image ?? null,
@@ -220,17 +275,10 @@ export async function createActivity(
     };
     await setDoc(ref, stored);
 
-    return {
-      id: ref.id,
-      ...data,
-      image: data.image ?? null,
-      solarEphemeris: data.solarEphemeris ?? null,
-      notes: data.notes ?? null,
-      audioKey: data.audioKey ?? null,
-      order,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    void mirrorActivity(tripId, record).catch((error) =>
+      console.warn("[TrailMind] activity mirror failed:", error)
+    );
+    return record;
   } catch (error) {
     throw mapFirestoreError(error);
   }
@@ -239,20 +287,32 @@ export async function createActivity(
 /**
  * All activities of a trip, ordered by day then position (in-memory sort —
  * no composite index needed). Hard cap of 500 per trip.
+ *
+ * Offline (or transient failure with a mirror present): served from Dexie.
  */
 export async function listActivities(
   uid: string,
   tripId: string
 ): Promise<ActivityRecord[]> {
+  if (isOfflineForData()) return (await readCachedActivities(tripId)).map(stripTripId);
   try {
     const snapshot = await getDocs(
       query(itineraryRef(uid, tripId), orderBy("day"), limit(500))
     );
-    return snapshot.docs
+    const activities = snapshot.docs
       .map((d) => mapActivityDoc({ id: d.id, ...d.data() }))
       .filter((a): a is ActivityRecord => a !== null)
       .sort((a, b) => a.day - b.day || a.order - b.order);
+
+    void mirrorActivities(tripId, activities).catch((error) =>
+      console.warn("[TrailMind] itinerary mirror failed:", error)
+    );
+    return activities;
   } catch (error) {
+    if (isTransientFirestoreError(error)) {
+      const cached = await readCachedActivities(tripId);
+      if (cached.length > 0) return cached.map(stripTripId);
+    }
     throw mapFirestoreError(error);
   }
 }
@@ -263,13 +323,34 @@ export async function getActivity(
   tripId: string,
   activityId: string
 ): Promise<ActivityRecord | null> {
+  if (isOfflineForData()) {
+    const cached = await readCachedActivity(tripId, activityId);
+    return cached ? stripTripId(cached) : null;
+  }
   try {
     const snapshot = await getDoc(activityRef(uid, tripId, activityId));
     if (!snapshot.exists()) return null;
-    return mapActivityDoc({ id: snapshot.id, ...snapshot.data() });
+    const activity = mapActivityDoc({ id: snapshot.id, ...snapshot.data() });
+    if (activity) {
+      void mirrorActivity(tripId, activity).catch((error) =>
+        console.warn("[TrailMind] activity mirror failed:", error)
+      );
+    }
+    return activity;
   } catch (error) {
+    if (isTransientFirestoreError(error)) {
+      const cached = await readCachedActivity(tripId, activityId);
+      if (cached) return stripTripId(cached);
+    }
     throw mapFirestoreError(error);
   }
+}
+
+/** The mirror stores `tripId` alongside the record; the public shape doesn't. */
+function stripTripId(cached: ActivityRecord & { tripId?: string }): ActivityRecord {
+  const { tripId: _tripId, ...activity } = cached;
+  void _tripId;
+  return activity as ActivityRecord;
 }
 
 /** Groups activities by their 1-based day, each day sorted by `order`. */
@@ -292,7 +373,12 @@ export function groupActivitiesByDay(
 /* Update / reorder / delete                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** Applies a validated partial update to one activity. */
+/**
+ * Applies a validated partial update to one activity.
+ *
+ * Offline: applied to the mirror immediately and queued with the
+ * `updatedAt` it was based on (conflict signal on flush).
+ */
 export async function updateActivity(
   uid: string,
   tripId: string,
@@ -301,19 +387,47 @@ export async function updateActivity(
 ): Promise<void> {
   try {
     const parsed = parseOrThrow(activityPatchSchema, patch);
-    if (Object.keys(parsed).length === 0) throw new Error("Nothing to update.");
+    // Zod fills defaults for absent keys (crowdLevel, status, description, …)
+    // — keep only what the caller sent so an update is strictly additive.
+    const fields: Record<string, unknown> = {
+      ...providedFields(patch, parsed),
+    };
+    if (Object.keys(fields).length === 0) throw new Error("Nothing to update.");
+
+    if (isOfflineForData()) {
+      const current = await readCachedActivity(tripId, activityId);
+      if (!current) {
+        throw new Error(
+          "This activity isn't saved on this device — reconnect to edit it."
+        );
+      }
+      await queueActivityUpdate(
+        uid,
+        tripId,
+        activityId,
+        fields,
+        current.updatedAt
+      );
+      return;
+    }
 
     await updateDoc(activityRef(uid, tripId, activityId), {
-      ...parsed,
-      image: parsed.image === undefined ? undefined : parsed.image ?? null,
-      solarEphemeris:
-        parsed.solarEphemeris === undefined
-          ? undefined
-          : parsed.solarEphemeris ?? null,
-      notes: parsed.notes === undefined ? undefined : parsed.notes ?? null,
-      audioKey: parsed.audioKey === undefined ? undefined : parsed.audioKey ?? null,
+      ...fields,
       updatedAt: serverTimestamp(),
     });
+
+    // Refresh the mirror so a later offline edit has the right base state.
+    const fresh = await getDoc(activityRef(uid, tripId, activityId)).catch(
+      () => null
+    );
+    const record = fresh?.exists()
+      ? mapActivityDoc({ id: fresh.id, ...fresh.data() })
+      : null;
+    if (record) {
+      void mirrorActivity(tripId, record).catch((error) =>
+        console.warn("[TrailMind] activity mirror failed:", error)
+      );
+    }
   } catch (error) {
     throw mapFirestoreError(error);
   }
@@ -335,19 +449,26 @@ export async function updateActivityNotes(
  * `orderedActivityIds[i]` becomes position `i`. Ids that don't belong to
  * this trip are ignored (never write to another user's path), and ids
  * missing on the server are skipped rather than failing the whole batch.
+ *
+ * Offline: the mirror is re-ordered immediately and the batch is queued.
  */
 export async function reorderActivities(
   uid: string,
   tripId: string,
   orderedActivityIds: string[]
 ): Promise<void> {
-  try {
-    const ids = orderedActivityIds.filter(
-      (id, index) =>
-        typeof id === "string" && id.length > 0 && orderedActivityIds.indexOf(id) === index
-    );
-    if (ids.length === 0) throw new Error("No activities to reorder.");
+  const ids = orderedActivityIds.filter(
+    (id, index) =>
+      typeof id === "string" && id.length > 0 && orderedActivityIds.indexOf(id) === index
+  );
+  if (ids.length === 0) throw new Error("No activities to reorder.");
 
+  if (isOfflineForData()) {
+    await queueItineraryReorder(uid, tripId, ids);
+    return;
+  }
+
+  try {
     const snapshot = await getDocs(itineraryRef(uid, tripId));
     const existing = new Set(snapshot.docs.map((d) => d.id));
 
@@ -364,38 +485,67 @@ export async function reorderActivities(
 
     if (changed === 0) throw new Error("That activity no longer exists.");
     await batch.commit();
+
+    // Reflect the new order in the mirror (best effort).
+    void mirrorReorder(tripId, ids).catch((error) =>
+      console.warn("[TrailMind] reorder mirror failed:", error)
+    );
   } catch (error) {
     throw mapFirestoreError(error);
   }
 }
 
-/** Deletes one activity. Missing activity = success (idempotent). */
+/**
+ * Deletes one activity. Missing activity = success (idempotent).
+ * Offline: dropped from the mirror and queued.
+ */
 export async function deleteActivity(
   uid: string,
   tripId: string,
   activityId: string
 ): Promise<void> {
+  if (isOfflineForData()) {
+    await queueActivityDelete(uid, tripId, activityId);
+    return;
+  }
   try {
     await deleteDoc(activityRef(uid, tripId, activityId));
+    await dropCachedActivity(activityId).catch((error) =>
+      console.warn("[TrailMind] activity mirror drop failed:", error)
+    );
   } catch (error) {
     throw mapFirestoreError(error);
   }
 }
 
-/** Deletes every activity of a trip (used by trip deletion / AI regenerate). */
+/**
+ * Deletes every activity of a trip (used by trip deletion / AI regenerate).
+ * Offline: the mirror is cleared and the batch is queued.
+ */
 export async function clearItinerary(
   uid: string,
   tripId: string
 ): Promise<number> {
+  if (isOfflineForData()) {
+    const cached = await readCachedActivities(tripId);
+    await queueItineraryClear(uid, tripId);
+    return cached.length;
+  }
   try {
     const snapshot = await getDocs(itineraryRef(uid, tripId));
-    if (snapshot.empty) return 0;
+    if (snapshot.empty) {
+      await dropCachedItinerary(tripId).catch(() => {});
+      return 0;
+    }
     const docs = snapshot.docs;
     for (let i = 0; i < docs.length; i += 400) {
       const batch = writeBatch(requireDb());
       docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
       await batch.commit();
     }
+    await dropCachedItinerary(tripId).catch((error) =>
+      console.warn("[TrailMind] itinerary mirror drop failed:", error)
+    );
     return docs.length;
   } catch (error) {
     throw mapFirestoreError(error);

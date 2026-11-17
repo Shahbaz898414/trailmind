@@ -98,6 +98,12 @@ export function getFirebaseDb(): Firestore | null {
   if (!db) {
     try {
       initializeFirestore(firebaseApp, {
+        // Zod keeps keys the caller passed as explicit `undefined`, and update
+        // patches legitimately contain undefined values ("leave this field
+        // alone"). Without this the SDK rejects them with
+        // "Unsupported field value: undefined"; with it they are skipped —
+        // never written, never deleted.
+        ignoreUndefinedProperties: true,
         localCache: persistentLocalCache({
           tabManager: persistentMultipleTabManager(),
         }),

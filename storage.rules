@@ -1,0 +1,64 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// TrailMind Firebase Storage Rules — the REAL authorization layer for files.
+//
+// Layout: users/{uid}/documents/{documentId}/{fileName}
+//   - Only the owner can read, write (create/update) or delete their objects.
+//   - 10 MB size cap and PDF/JPEG/PNG/WebP content types are enforced here
+//     server-side; the identical checks in src/lib/firebase/storage.ts are UX.
+//   - File names cannot start with "." (the client sanitises them; this rule
+//     makes the guarantee server-side). Path segments cannot contain "/" by
+//     construction of the wildcard.
+//   - Everything else in the bucket is unreachable (default deny below).
+//
+// Not deployed by any build step — run `firebase deploy --only storage:rules`
+// manually after review. Phase 11 tests exercise these rules through the
+// Storage Emulator.
+// ---------------------------------------------------------------------------
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // Uploads: non-empty, ≤ 10 MB, and either one of the four allowed MIME
+    // types or an opaque stream whose NAME carries an allowed extension
+    // (mirrors validateTravelDocumentFile: type OR extension must match).
+    function validUpload(fileName) {
+      return request.resource.size > 0
+        && request.resource.size <= 10 * 1024 * 1024
+        && (
+          request.resource.contentType in
+            ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+          || (
+            request.resource.contentType == 'application/octet-stream'
+            && fileName.matches('.*\\.(pdf|jpg|jpeg|png|webp)$')
+          )
+        )
+        && fileName.size() >= 1
+        && fileName.size() <= 255
+        && fileName.matches('^[^.].*');
+    }
+
+    match /users/{uid}/documents/{documentId}/{fileName} {
+      // Download / getMetadata / list
+      allow read: if owner(uid);
+
+      // create + update (resumable uploads report as create; a re-upload of
+      // the same object name is an update)
+      allow create, update: if owner(uid) && validUpload(fileName);
+
+      // Deletes must be allowed separately: `request.resource` is null on
+      // delete, so size/content checks cannot run (and must not).
+      allow delete: if owner(uid);
+    }
+
+    // Default deny — no other object in this bucket is reachable by any client.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

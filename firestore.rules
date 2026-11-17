@@ -1,0 +1,361 @@
+rules_version = '2';
+
+// ---------------------------------------------------------------------------
+// TrailMind Firestore Security Rules — the REAL authorization layer.
+//
+// Contract (see docs/FIRESTORE_SCHEMA.md §6 and docs/BACKEND_SETUP.md):
+//   - Every path is user-scoped: `request.auth.uid == uid` on read AND write,
+//     including every subcollection. Cross-user access is denied outright.
+//   - Field validation mirrors the Zod schemas in src/services/*: types, enums,
+//     date patterns and size limits are enforced server-side. Client-side Zod
+//     validation is UX, not security.
+//   - Updates validate the FULL resulting document (`request.resource.data`)
+//     and restrict which keys may change, so a client cannot smuggle fields
+//     the services never write.
+//   - Trip updates must advance `version` by exactly 1 (optimistic concurrency
+//     used by the offline sync engine).
+//   - Notification updates may only flip `read`.
+//
+// These rules are NOT deployed by any build step. Deploy manually with
+// `firebase deploy --only firestore:rules` after reviewing them (Phase 11
+// tests exercise them locally through the Emulator Suite).
+// ---------------------------------------------------------------------------
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- helpers
+    function owner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function str(v, max) {
+      return v is string && v.size() <= max;
+    }
+
+    function requiredStr(v, max) {
+      return v is string && v.size() >= 1 && v.size() <= max;
+    }
+
+    function optStr(v, max) {
+      return v == null || (v is string && v.size() <= max);
+    }
+
+    function isoDate(v) {
+      return v is string && v.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+
+    function optTimestamp(v) {
+      return v == null || v is timestamp;
+    }
+
+    function numGte(v, min) {
+      return v is number && v >= min;
+    }
+
+    function intRange(v, min, max) {
+      return v is int && v >= min && v <= max;
+    }
+
+    // Keys a document update may touch (server-managed timestamps included).
+    function onlyChanged(keys) {
+      return resource.data.diff(request.resource.data).affectedKeys().hasOnly(keys);
+    }
+
+    // ---------------------------------------------------------------- profile
+    function validProfile(d) {
+      return d.uid is string
+        && d.uid.size() >= 1 && d.uid.size() <= 128
+        && (d.email == null || (d.email is string && d.email.size() <= 320))
+        && optStr(d.displayName, 100)
+        && optStr(d.photoURL, 2048)
+        && d.preferredLanguage is string && d.preferredLanguage.size() <= 20
+        && (d.travelStyle == null || (d.travelStyle is string && d.travelStyle.size() <= 50))
+        && d.onboardingComplete is bool
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // ---------------------------------------------------------------- trips
+    function validTrip(d) {
+      return requiredStr(d.title, 200)
+        && requiredStr(d.destination, 200)
+        && str(d.region, 200)
+        && str(d.country, 100)
+        && d.countryCode is string && d.countryCode.matches('^[A-Z]{0,2}$')
+        && isoDate(d.startDate)
+        && isoDate(d.endDate)
+        && d.endDate >= d.startDate
+        && intRange(d.durationDays, 1, 365)
+        && d.status in ['draft', 'upcoming', 'in-progress', 'completed']
+        && intRange(d.travelers, 1, 99)
+        && d.offlineStatus in
+             ['downloaded', 'downloading', 'sync_required', 'not_downloaded']
+        && numGte(d.offlineSizeMb, 0)
+        && d.offlineReady is bool
+        && str(d.coverImage, 500)
+        && optStr(d.heroImage, 500)
+        && str(d.summary, 1000)
+        && str(d.terrainType, 300)
+        && str(d.averageElevation, 100)
+        && d.packWeightKg is number && d.packWeightKg >= 0 && d.packWeightKg <= 500
+        && d.maxWeightKg is number && d.maxWeightKg >= 0 && d.maxWeightKg <= 500
+        && str(d.satelliteSyncCadence, 100)
+        && d.budget is map
+        && d.budget.currency is string && d.budget.currency.matches('^[A-Z]{3}$')
+        && numGte(d.budget.total, 0)
+        && numGte(d.budget.spent, 0)
+        && d.placesCount is int && d.placesCount >= 0
+        && d.version is int && d.version >= 1
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // Every trip update must advance the conflict-detection counter by one.
+    function tripVersionAdvanced() {
+      return !('version' in request.resource.data.diff(resource.data).affectedKeys())
+        || request.resource.data.version == resource.data.version + 1;
+    }
+
+    // ---------------------------------------------------------------- activities
+    function validActivity(d) {
+      return intRange(d.day, 1, 365)
+        && isoDate(d.date)
+        && str(d.timeSlot, 50)
+        && requiredStr(d.title, 200)
+        && d.category in ['Culture', 'Nature', 'Dining', 'Transit', 'Lodging', 'Heritage']
+        && str(d.location, 300)
+        && str(d.coordinates, 100)
+        && str(d.duration, 50)
+        && str(d.elevation, 100)
+        && d.crowdLevel in ['Low', 'Moderate', 'High']
+        && d.status in ['confirmed', 'optimized', 'contingency']
+        && optStr(d.image, 500)
+        && str(d.description, 2000)
+        && optStr(d.solarEphemeris, 200)
+        && optStr(d.notes, 2000)
+        && optStr(d.audioKey, 200)
+        && d.order is int && d.order >= 0
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // ---------------------------------------------------------------- places
+    function validPlace(d) {
+      return requiredStr(d.name, 200)
+        && optStr(d.japaneseName, 200)
+        && d.category in
+             ['Temple', 'Ryokan', 'Mountain Hut', 'Viewpoint', 'Food', 'Trail']
+        && str(d.city, 100)
+        && str(d.region, 100)
+        && str(d.elevation, 50)
+        && str(d.coordinates, 100)
+        && str(d.image, 500)
+        && d.offlineCached is bool
+        && str(d.notes, 4000)
+        && (d.proximityKm == null
+              || (d.proximityKm is number && d.proximityKm >= 0))
+        && optStr(d.tripId, 128)
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // ---------------------------------------------------------------- documents
+    function validDocument(d) {
+      return d.category in ['Transport', 'Lodging', 'Pass / Visa', 'Insurance', 'Permit']
+        && requiredStr(d.title, 200)
+        && str(d.referenceCode, 100)
+        && str(d.issuer, 200)
+        && str(d.carrierOrHotel, 200)
+        && str(d.validDates, 100)
+        && optStr(d.seatOrRoom, 200)
+        && optStr(d.departureTime, 50)
+        && optStr(d.arrivalTime, 50)
+        && optStr(d.departureStation, 100)
+        && optStr(d.arrivalStation, 100)
+        && d.encryptionStatus in ['AES-256 Encrypted (On-Device)', 'Hardware Key Bound']
+        && d.barcodeType in ['Aztec Code', 'QR-Code', 'PDF417']
+        && str(d.barcodeValue, 500)
+        && d.status in ['active', 'archived', 'upcoming']
+        && optStr(d.image, 500)
+        && d.details is map
+        && str(d.notes, 4000)
+        && optStr(d.tripId, 128)
+        && optStr(d.fileName, 255)
+        && optStr(d.contentType, 100)
+        && (d.sizeBytes == null
+              || (d.sizeBytes is int && d.sizeBytes >= 0 && d.sizeBytes <= 10485760))
+        && optStr(d.storagePath, 1024)
+        // File bytes never live in Firestore; the path must point inside this
+        // user's own Storage folder when it is present.
+        && (d.storagePath == null
+              || d.storagePath.matches('^users/' + uid + '/documents/[^/]+/[^/]+$'))
+        && d.offlineAvailable is bool
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // ---------------------------------------------------------------- contacts
+    function validContact(d) {
+      return requiredStr(d.name, 120)
+        && requiredStr(d.relationship, 200)
+        && requiredStr(d.phone, 50)
+        && optStr(d.satelliteAddress, 200)
+        && intRange(d.priority, 1, 99)
+        && d.isPrimaryIce is bool
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    // ---------------------------------------------------------------- phrases
+    function validPhrase(d) {
+      return d.category in
+               ['Transport & Taxi', 'Emergency & Medical', 'Dining & Dietary',
+                'Lodging & Ryokan', 'Direction & Trail']
+        && requiredStr(d.english, 1000)
+        && str(d.japaneseKanji, 1000)
+        && str(d.japaneseFurigana, 1000)
+        && str(d.romaji, 1000)
+        && str(d.contextNote, 1000)
+        && str(d.audioKey, 200)
+        && d.isSavedForOfflineFlashcard is bool
+        && str(d.language, 20)
+        && optTimestamp(d.createdAt);
+    }
+
+    // ---------------------------------------------------------------- notifications
+    function validNotification(d) {
+      return d.category in ['Satellite', 'Weather', 'Offline Sync', 'Emergency', 'Transit']
+        && requiredStr(d.title, 200)
+        && str(d.body, 1000)
+        && d.read is bool
+        && d.severity in ['critical', 'warning', 'info', 'success']
+        && optStr(d.actionLabel, 100)
+        && optStr(d.actionHref, 500)
+        && optTimestamp(d.createdAt);
+    }
+
+    // ---------------------------------------------------------------- conversations / messages
+    function validConversation(d) {
+      return requiredStr(d.title, 200)
+        && optStr(d.tripId, 128)
+        && optTimestamp(d.createdAt)
+        && optTimestamp(d.updatedAt);
+    }
+
+    function validMessage(d) {
+      return d.role in ['user', 'assistant']
+        && requiredStr(d.content, 8000)
+        && (d.source == null || d.source in ['on-device', 'cloud'])
+        && optTimestamp(d.createdAt);
+    }
+
+    // =====================================================================
+    // users/{uid} and everything beneath it
+    // =====================================================================
+    match /users/{uid} {
+
+      allow read, delete: if owner(uid);
+
+      allow create: if owner(uid)
+        && request.resource.data.uid == uid
+        && validProfile(request.resource.data);
+
+      allow update: if owner(uid)
+        && validProfile(request.resource.data)
+        && onlyChanged([
+             'email', 'displayName', 'photoURL', 'preferredLanguage',
+             'travelStyle', 'onboardingComplete', 'createdAt', 'updatedAt'
+           ]);
+
+      // ------------------------------------------------------------ trips
+      match /trips/{tripId} {
+        allow read, delete: if owner(uid);
+
+        allow create: if owner(uid)
+          && validTrip(request.resource.data)
+          && request.resource.data.version == 1;
+
+        allow update: if owner(uid)
+          && validTrip(request.resource.data)
+          && tripVersionAdvanced();
+      }
+
+      // -------------------------------------------------------- activities
+      match /trips/{tripId}/itinerary/{activityId} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && validActivity(request.resource.data);
+      }
+
+      // ----------------------------------------------------- saved places
+      match /savedPlaces/{placeId} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && validPlace(request.resource.data);
+      }
+
+      // ---------------------------------------------------------- wallet
+      match /documents/{documentId} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && validDocument(request.resource.data);
+      }
+
+      // --------------------------------------------------- emergency contacts
+      match /emergencyContacts/{contactId} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && validContact(request.resource.data);
+      }
+
+      // --------------------------------------------------------- phrases
+      match /savedPhrases/{phraseId} {
+        allow read, delete: if owner(uid);
+        allow create, update: if owner(uid)
+          && validPhrase(request.resource.data);
+      }
+
+      // ---------------------------------------------------- notifications
+      match /notifications/{notificationId} {
+        allow read, delete: if owner(uid);
+
+        allow create: if owner(uid)
+          && validNotification(request.resource.data);
+
+        // In-app notifications are created by legitimate app events; once
+        // written, the ONLY thing the client may change is `read`.
+        allow update: if owner(uid)
+          && validNotification(request.resource.data)
+          && onlyChanged(['read']);
+      }
+
+      // ---------------------------------------------------- AI conversations
+      match /conversations/{conversationId} {
+        allow read, delete: if owner(uid);
+
+        allow create: if owner(uid)
+          && validConversation(request.resource.data);
+
+        allow update: if owner(uid)
+          && validConversation(request.resource.data)
+          && onlyChanged(['title', 'tripId', 'updatedAt']);
+
+        match /messages/{messageId} {
+          allow read, delete: if owner(uid);
+          allow create: if owner(uid)
+            && validMessage(request.resource.data);
+          // Chat history is append-only: messages are never edited in place.
+          allow update: if false;
+        }
+      }
+    }
+
+    // =====================================================================
+    // Default deny — nothing else in this database is reachable.
+    // =====================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

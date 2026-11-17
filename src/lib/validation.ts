@@ -34,3 +34,28 @@ export function parseOrThrow<T>(
   if (!result.success) throw new Error(validationMessage(result.error));
   return result.data;
 }
+
+/**
+ * Narrows a parsed PATCH down to the fields the caller actually sent.
+ *
+ * Zod v4's `.partial()` still applies `.default()` values for absent keys,
+ * so a patch parsed straight from a partial schema would silently RESET every
+ * defaulted field on an update — `updateTrip({ title })` would rewrite
+ * `status` back to `"draft"` and `budget` back to USD/0/0, and an empty
+ * patch would look non-empty. Filtering against the raw input keeps updates
+ * strictly additive: only keys the caller provided (with a defined value)
+ * are written, and an empty patch stays genuinely empty.
+ */
+export function providedFields<I extends object, P extends Record<string, unknown>>(
+  input: I,
+  parsed: P
+): Partial<P> {
+  const raw = input as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key in raw && raw[key] !== undefined && value !== undefined) {
+      out[key] = value;
+    }
+  }
+  return out as Partial<P>;
+}

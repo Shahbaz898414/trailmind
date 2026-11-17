@@ -100,6 +100,8 @@ export type ChatRole = "user" | "assistant";
 export type ChatMessage = {
   id: string;
   tripId?: string;
+  /** Conversation this message belongs to (AI chat history). */
+  conversationId?: string;
   role: ChatRole;
   content: string;
   /** Where the answer came from, once hybrid inference is wired up */
@@ -112,6 +114,12 @@ export type ChatMessage = {
 export type SyncOperation = {
   /** Client-generated UUID (kept as a string so it works across tabs). */
   id: string;
+  /**
+   * Owner of this operation. The sync engine only flushes operations whose
+   * uid matches the signed-in user — a queued write from user A can never be
+   * pushed into user B's data if accounts are switched on this device.
+   */
+  uid: string;
   entity: string;
   entityId: string;
   operation: "create" | "update" | "delete";
@@ -119,4 +127,22 @@ export type SyncOperation = {
   /** ISO timestamp */
   createdAt: string;
   attempts: number;
+  /**
+   * Version the edit was based on (read from the Dexie mirror when the write
+   * happened offline). The sync engine refuses to auto-apply an update whose
+   * remote version has moved past this — a real conflict, surfaced instead of
+   * silently overwritten.
+   */
+  baseVersion?: number;
+  /**
+   * `updatedAt` (ISO) the edit was based on — conflict signal for entities
+   * without a `version` counter.
+   */
+  baseUpdatedAt?: string;
+  /**
+   * Set by the sync engine when the operation must NOT be applied
+   * automatically (e.g. `"conflict: remote version 7 > base 5"`). Flagged
+   * operations are skipped until explicitly resolved (retry/discard).
+   */
+  lastError?: string;
 };

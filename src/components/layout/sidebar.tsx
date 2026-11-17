@@ -2,13 +2,18 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { HardDrive, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import { dashboardNav } from "@/constants/navigation";
 import { siteConfig } from "@/constants/site";
-import { offlineStorageStatus } from "@/data/offline";
+import {
+  formatBytes,
+  getStorageEstimate,
+  type StorageEstimateInfo,
+} from "@/lib/offline/storage-manager";
 
 type SidebarProps = {
   /** Fired after a link is clicked — lets the mobile drawer close itself. */
@@ -30,6 +35,22 @@ function isActiveRoute(pathname: string, href: string): boolean {
  */
 export function Sidebar({ onNavigate, onClose, className }: SidebarProps) {
   const pathname = usePathname();
+  const [storage, setStorage] = useState<StorageEstimateInfo | null>(null);
+
+  // Real browser-reported usage for this origin (never a fabricated figure).
+  useEffect(() => {
+    let cancelled = false;
+    getStorageEstimate()
+      .then((estimate) => {
+        if (!cancelled) setStorage(estimate);
+      })
+      .catch(() => {
+        // API unavailable → the HUD renders "—" instead of inventing numbers.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <div
@@ -139,19 +160,28 @@ export function Sidebar({ onNavigate, onClose, className }: SidebarProps) {
             Field Storage
           </span>
           <span className="font-mono text-[11px] font-bold text-primary">
-            {offlineStorageStatus.usedStorageGb} / {offlineStorageStatus.totalStorageGb} GB
+            {storage ? formatBytes(storage.usageBytes) : "—"} /{" "}
+            {storage?.quotaBytes != null ? formatBytes(storage.quotaBytes) : "—"}
           </span>
         </div>
 
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface-container-highest">
           <div
             className="h-full rounded-full bg-primary transition-all duration-500"
-            style={{ width: `${offlineStorageStatus.quotaPercent}%` }}
+            style={{
+              width: `${
+                storage?.usageFraction != null
+                  ? Math.round(storage.usageFraction * 100)
+                  : 0
+              }%`,
+            }}
           />
         </div>
 
         <p className="mt-1.5 truncate text-[11px] text-on-surface-variant">
-          {offlineStorageStatus.quotaPercent}% cached for offline routing
+          {storage?.usageFraction != null
+            ? `${Math.round(storage.usageFraction * 100)}% of this device's storage quota in use`
+            : "Storage estimate unavailable in this browser"}
         </p>
       </div>
     </div>
