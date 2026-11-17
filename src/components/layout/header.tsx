@@ -27,9 +27,12 @@ const INITIAL_IDLE_STATE: SyncEngineState = {
 export function Header({ onOpenMenu }: HeaderProps) {
   const { signOut, status, user } = useAuth();
   const online = useOnlineStatus();
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [countState, setCountState] = useState<{
+    uid: string;
+    count: number;
+  } | null>(null);
   const [sync, setSync] = useState<SyncEngineState>(INITIAL_IDLE_STATE);
-  const [avatarFailed, setAvatarFailed] = useState(false);
+  const [failedAvatar, setFailedAvatar] = useState<string | null>(null);
 
   const uid = user?.uid ?? null;
   const displayName =
@@ -38,21 +41,24 @@ export function Header({ onOpenMenu }: HeaderProps) {
   const avatarSrc = user?.photoURL;
   const initial = displayName.charAt(0).toUpperCase();
 
+  // Derived, never reset from an effect: switching users instantly shows 0
+  // instead of the previous account's count.
+  const unreadCount =
+    countState && countState.uid === uid ? countState.count : 0;
+  const avatarFailed = avatarSrc !== null && failedAvatar === avatarSrc;
+
   // Real unread count — 0 while offline/unconfigured rather than a fake badge.
   useEffect(() => {
-    if (!uid) {
-      setUnreadCount(0);
-      return;
-    }
+    if (!uid) return;
     let cancelled = false;
     const load = () => {
       countUnreadNotifications(uid)
         .then((count) => {
-          if (!cancelled) setUnreadCount(count);
+          if (!cancelled) setCountState({ uid, count });
         })
         .catch(() => {
-          // Offline / backend unconfigured: show no badge instead of a
-          // fabricated number. The notifications page loads them properly.
+          // Offline / backend unconfigured: keep the last known count instead
+          // of fabricating one. The notifications page loads them properly.
         });
     };
     load();
@@ -66,8 +72,6 @@ export function Header({ onOpenMenu }: HeaderProps) {
 
   // Live sync-engine state (pending queue / conflicts / in-flight flush).
   useEffect(() => subscribeSyncState(setSync), []);
-
-  useEffect(() => setAvatarFailed(false), [avatarSrc]);
 
   const pending = sync.status === "idle" ? sync.pending : 0;
   const conflicts = sync.status === "idle" ? sync.conflicts : 0;
@@ -166,7 +170,9 @@ export function Header({ onOpenMenu }: HeaderProps) {
                 width={32}
                 height={32}
                 className="h-full w-full object-cover"
-                onError={() => setAvatarFailed(true)}
+                onError={() => {
+                  if (avatarSrc) setFailedAvatar(avatarSrc);
+                }}
               />
             ) : (
               <span className="text-xs font-bold text-primary">{initial}</span>

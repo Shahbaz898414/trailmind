@@ -20,8 +20,28 @@ import {
 
 import { currentUser } from "@/data/user";
 import { emergencyContactsList, fieldRescueServices } from "@/data/emergency-contacts";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  listEmergencyContacts,
+  type EmergencyContactRecord,
+} from "@/services/emergency-contacts";
 
 export default function EmergencyPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const contactsKey = uid ? `contacts:${uid}` : null;
+  const { data: dbContacts } = useAsyncResource<EmergencyContactRecord[]>(
+    contactsKey,
+    async () => {
+      if (!uid) return [];
+      return listEmergencyContacts(uid);
+    }
+  );
+
+  const contacts = dbContacts && dbContacts.length > 0 ? dbContacts : emergencyContactsList;
+
   const [isBeaconActive, setIsBeaconActive] = useState(false);
   const [sosArmed, setSosArmed] = useState(false);
   const [sosTriggered, setSosTriggered] = useState(false);
@@ -297,7 +317,7 @@ export default function EmergencyPage() {
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {emergencyContactsList.map((contact) => (
+            {contacts.map((contact) => (
               <div
                 key={contact.id}
                 className="p-5 rounded-2xl bg-white border border-border shadow-sm flex flex-col justify-between gap-3"

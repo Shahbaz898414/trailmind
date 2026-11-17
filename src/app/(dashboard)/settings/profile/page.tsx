@@ -26,8 +26,24 @@ import {
 } from "lucide-react";
 import { currentUser } from "@/data/user";
 import { emergencyContactsList } from "@/data/emergency-contacts";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  fetchUserProfile,
+  updateUserProfile,
+  type UserProfile,
+} from "@/services/profile";
 
 export default function ProfileSettingsPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const profileKey = uid ? `profile:${uid}` : null;
+  const { data: dbProfile } = useAsyncResource<UserProfile | null>(profileKey, async () => {
+    if (!uid) return null;
+    return fetchUserProfile(uid);
+  });
+
   const [showQrModal, setShowQrModal] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [autoSosThreshold, setAutoSosThreshold] = useState("12h");
@@ -35,6 +51,11 @@ export default function ProfileSettingsPage() {
 
   const handleSave = () => {
     setSaveSuccess(true);
+    if (uid) {
+      void updateUserProfile(uid, {
+        displayName: dbProfile?.displayName || user?.displayName || currentUser.name,
+      }).catch((err) => console.warn("[TrailMind] updateUserProfile failed:", err));
+    }
     setTimeout(() => setSaveSuccess(false), 3000);
   };
 

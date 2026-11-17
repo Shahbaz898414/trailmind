@@ -30,147 +30,226 @@ import {
   Lock,
 } from "lucide-react";
 
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  deleteNotification,
+  listNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  markNotificationUnread,
+  type NotificationRecord,
+} from "@/services/notifications";
+
+type AlertCategory = "critical" | "weather" | "storage" | "mesh" | "state";
+
+/** View-model for one row of the alert feed (mapped from a NotificationRecord). */
 interface AlertItem {
   id: string;
-  category: "critical" | "weather" | "storage" | "mesh" | "state";
+  category: AlertCategory;
+  severity: NotificationRecord["severity"];
   title: string;
   description: string;
   timestamp: string;
-  packetId?: string;
-  telemetry: {
-    device: string;
-    detail1: string;
-    detail2: string;
-  };
   read: boolean;
   borderClass: string;
   badgeBg: string;
   badgeText: string;
   badgeLabel: string;
+  telemetry: {
+    device: string;
+    detail1: string;
+    detail2: string;
+  };
 }
 
-const initialAlerts: AlertItem[] = [
-  {
-    id: "alert-1",
-    category: "critical",
-    title: "Iridium Burst Ping Acknowledged: Otowa Pass Bivouac",
-    description:
-      "Packet ID #IRID-9821 successfully acknowledged by Basecamp Relay. Coordinates 34.4210° N, 135.8821° E locked. Watchdog window refreshed to 120 minutes.",
-    timestamp: "6 mins ago",
-    packetId: "#IRID-9821",
-    telemetry: {
-      device: "Garmin inReach Mini 2",
-      detail1: "Latency 4.2s",
-      detail2: "Payload 32B",
-    },
-    read: false,
-    borderClass: "bg-error",
+/** Severity → the exact palette the design already uses for each tier. */
+const SEVERITY_STYLES: Record<
+  NotificationRecord["severity"],
+  { borderClass: string; badgeBg: string; badgeText: string }
+> = {
+  critical: {
+    borderClass: "bg-rose-600",
     badgeBg: "bg-rose-100",
     badgeText: "text-rose-800",
-    badgeLabel: "Critical • Satellite",
   },
-  {
-    id: "alert-2",
-    category: "weather",
-    title: "Barometric Drop Detected (-3.2 hPa / 2h): Omine Ridge High Pass",
-    description:
-      "On-device sensor fusion flags rapid pressure gradient drop. High likelihood of sudden squall and localized precipitation window at 17:45 JST. Omine exposed knife-edge gale advisory active.",
-    timestamp: "24 mins ago",
-    packetId: "-3.2 hPa / 2h",
-    telemetry: {
-      device: "Local Barometer BMP390",
-      detail1: "Current: 884.1 hPa",
-      detail2: "Gale Est: 45 kt",
-    },
-    read: false,
+  warning: {
     borderClass: "bg-amber-500",
     badgeBg: "bg-amber-100",
     badgeText: "text-amber-900",
-    badgeLabel: "High • Weather Alert",
   },
-  {
-    id: "alert-3",
-    category: "storage",
-    title: "Kumano Sector Topo DEM Cache Update Available",
-    description:
-      "Forestry agency published updated 5m contour lidar pack for Nachi Falls & Koguchi valley (42 MB delta). Cached offline tiles valid until 48h before forced expiration.",
-    timestamp: "2 hours ago",
-    packetId: "OPFS Bucket #2",
-    telemetry: {
-      device: "OPFS Cache Storage",
-      detail1: "Delta: 42 MB",
-      detail2: "Requires 30s High-Bandwidth",
-    },
-    read: false,
+  success: {
     borderClass: "bg-emerald-600",
     badgeBg: "bg-secondary-fixed",
     badgeText: "text-primary",
-    badgeLabel: "Warning • Storage & DEM",
   },
-  {
-    id: "alert-4",
-    category: "mesh",
-    title: "TrailMind LoRa Relay #04 Peer Handshake Established",
-    description:
-      "4th ad-hoc node joined expedition mesh network on sub-GHz ISM band. Signal RSSI -84 dBm, SNR +7 dB. Relay coverage extended +3.4 km towards North Col.",
-    timestamp: "3 hours ago",
-    packetId: "LoRa P2P 915 MHz",
-    telemetry: {
-      device: "SX1262 Transceiver",
-      detail1: "Spread Factor SF10",
-      detail2: "Zero Packet Loss",
-    },
-    read: true,
+  info: {
     borderClass: "bg-primary",
     badgeBg: "bg-primary/10",
     badgeText: "text-primary",
-    badgeLabel: "Info • Mesh Topology",
   },
-  {
-    id: "alert-5",
-    category: "state",
-    title: "Two-Way CRDT Schedule Sync Complete",
-    description:
-      "Merged 3 waypoint adjustments and bivouac arrival timestamp with offline secure vault. Zero state conflicts detected across multi-device replica sets.",
-    timestamp: "Yesterday 19:12 JST",
-    packetId: "CRDT Merged",
+};
+
+/** Firestore category → the icon segment the feed already renders. */
+function categoryToSegment(
+  category: NotificationRecord["category"]
+): AlertCategory {
+  switch (category) {
+    case "Weather":
+      return "weather";
+    case "Offline Sync":
+      return "storage";
+    case "Transit":
+      return "state";
+    case "Emergency":
+      return "critical";
+    case "Satellite":
+    default:
+      return "mesh";
+  }
+}
+
+function toAlertItem(record: NotificationRecord): AlertItem {
+  const styles = SEVERITY_STYLES[record.severity] ?? SEVERITY_STYLES.info;
+  return {
+    id: record.id,
+    category: categoryToSegment(record.category),
+    severity: record.severity,
+    title: record.title,
+    description: record.body || "No details were recorded with this alert.",
+    timestamp: record.timestamp,
+    read: record.read,
+    borderClass: styles.borderClass,
+    badgeBg: styles.badgeBg,
+    badgeText: styles.badgeText,
+    badgeLabel: `${record.severity} • ${record.category}`,
     telemetry: {
-      device: "SQLite Local Vault #01",
-      detail1: "Commit: #8f921a",
-      detail2: "Audited & Sealed",
+      device: record.category,
+      detail1: `Severity: ${record.severity}`,
+      detail2: record.read ? "Read" : "Unread",
     },
-    read: true,
-    borderClass: "bg-outline-variant",
-    badgeBg: "bg-surface-container",
-    badgeText: "text-on-surface-variant",
-    badgeLabel: "Resolved • State Engine",
-  },
-];
+  };
+}
+
+/** Severity filter cycle used by the "Filter by Severity" button. */
+const SEVERITY_CYCLE = ["all", "critical", "warning", "info", "success"] as const;
 
 export default function NotificationsCenterPage() {
-  const [alerts, setAlerts] = useState<AlertItem[]>(initialAlerts);
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  // Bumped after every mutation so the feed re-reads Firestore/local cache.
+  const [reloadKey, setReloadKey] = useState(0);
+  const [acting, setActing] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("all");
+  const [severityIdx, setSeverityIdx] = useState(0);
   const [quietHours, setQuietHours] = useState(true);
   const [batteryConservation, setBatteryConservation] = useState(true);
   const [fallDetection, setFallDetection] = useState(true);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const notifKey = uid ? `notifications:${uid}:${reloadKey}` : null;
+  const { data, error, loading } = useAsyncResource<NotificationRecord[]>(
+    notifKey,
+    async () => {
+      if (!uid) return [];
+      const page = await listNotifications(uid, { pageSize: 100 });
+      return page.items;
+    }
+  );
+
+  const notifications = data ?? [];
+  const alerts = React.useMemo(
+    () => notifications.map(toAlertItem),
+    [notifications]
+  );
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  const criticalUnread = notifications.filter(
+    (n) => !n.read && n.severity === "critical"
+  ).length;
+  const offlineSyncCount = notifications.filter(
+    (n) => n.category === "Offline Sync"
+  ).length;
+  const categoryCount = new Set(notifications.map((n) => n.category)).size;
+  const readPercent =
+    notifications.length === 0
+      ? 0
+      : Math.round(
+          ((notifications.length - unreadCount) / notifications.length) * 100
+        );
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const markAllRead = () => {
-    setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
-    showToast("All 5 expedition alerts marked as read.");
+  const severityFilter = SEVERITY_CYCLE[severityIdx];
+  const cycleSeverity = () => {
+    const next = (severityIdx + 1) % SEVERITY_CYCLE.length;
+    setSeverityIdx(next);
+    showToast(
+      SEVERITY_CYCLE[next] === "all"
+        ? "Showing alerts of every severity."
+        : `Filtered to ${SEVERITY_CYCLE[next]} severity.`
+    );
   };
 
-  const dismissAlert = (id: string) => {
-    setAlerts((prev) => prev.filter((a) => a.id !== id));
-    showToast("Alert dismissed.");
+  const markAllRead = async () => {
+    if (!uid || acting) return;
+    setActing(true);
+    try {
+      const count = await markAllNotificationsRead(uid);
+      showToast(
+        count === 0
+          ? "Nothing to mark — every alert is already read."
+          : `${count} alert${count === 1 ? "" : "s"} marked as read.`
+      );
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Could not update notifications."
+      );
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const toggleRead = async (alert: AlertItem) => {
+    if (!uid || acting) return;
+    setActing(true);
+    try {
+      if (alert.read) await markNotificationUnread(uid, alert.id);
+      else await markNotificationRead(uid, alert.id);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Could not update that alert."
+      );
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const dismissAlert = async (id: string) => {
+    if (!uid || acting) return;
+    setActing(true);
+    try {
+      await deleteNotification(uid, id);
+      showToast("Alert dismissed.");
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Could not dismiss that alert."
+      );
+    } finally {
+      setActing(false);
+    }
   };
 
   const filteredAlerts = alerts.filter((alert) => {
+    if (severityFilter !== "all" && alert.severity !== severityFilter) {
+      return false;
+    }
     if (activeTab === "all") return true;
     if (activeTab === "satellite") return alert.category === "critical" || alert.category === "mesh";
     if (activeTab === "weather") return alert.category === "weather";
@@ -196,10 +275,17 @@ export default function NotificationsCenterPage() {
               <div className="flex flex-col gap-1">
                 <h1 className="text-3xl font-extrabold text-primary tracking-tight font-serif flex items-center gap-3 flex-wrap">
                   <span>Expedition Notifications & Satellite Alerts</span>
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-semibold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-rose-600 mr-1.5 animate-ping" />
-                    2 Critical Dispatches
-                  </span>
+                  {criticalUnread > 0 ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 text-xs font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-rose-600 mr-1.5 animate-ping" />
+                      {criticalUnread} Critical Dispatch
+                      {criticalUnread === 1 ? "" : "es"}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed text-xs font-semibold">
+                      No critical alerts
+                    </span>
+                  )}
                 </h1>
                 <p className="text-sm text-on-surface-variant max-w-3xl">
                   Priority telemetry, low-power satellite dispatch queues, hardware watchdog alarms, and
@@ -209,18 +295,21 @@ export default function NotificationsCenterPage() {
 
               <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 <button
-                  onClick={markAllRead}
-                  className="px-3.5 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 border border-outline-variant/30"
+                  onClick={() => void markAllRead()}
+                  disabled={acting}
+                  className="px-3.5 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm active:scale-95 border border-outline-variant/30 disabled:opacity-60"
                 >
                   <CheckCheck className="w-3.5 h-3.5" />
                   <span>Mark All Read</span>
                 </button>
                 <button
-                  onClick={() => showToast("Severity filter active: Showing all unmasked priorities.")}
+                  onClick={cycleSeverity}
                   className="px-3.5 py-2 rounded-lg bg-surface-container-lowest hover:bg-surface-container text-primary text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm border border-outline-variant/30"
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span>Filter by Severity</span>
+                  <span>
+                    Severity: {severityFilter === "all" ? "All" : severityFilter}
+                  </span>
                 </button>
                 <Link
                   href="/settings/hardware"
@@ -254,14 +343,16 @@ export default function NotificationsCenterPage() {
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-extrabold text-on-surface font-mono">2</span>
-                <span className="text-xs text-rose-600 font-semibold">Pending / Acked</span>
+                <span className="text-2xl font-extrabold text-on-surface font-mono">
+                  {criticalUnread}
+                </span>
+                <span className="text-xs text-rose-600 font-semibold">Unread critical</span>
               </div>
               <div className="flex items-center justify-between text-on-surface-variant text-[11px] pt-1 border-t border-outline-variant/20">
                 <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-600" /> Garmin inReach Mesh
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-600" /> Severity: critical
                 </span>
-                <span className="text-primary font-mono font-medium">99.8% Uplink</span>
+                <span className="text-primary font-mono font-medium">{notifications.length} total</span>
               </div>
             </div>
 
@@ -269,39 +360,40 @@ export default function NotificationsCenterPage() {
             <div className="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between gap-2 relative overflow-hidden group hover:shadow-md transition-shadow border border-outline-variant/30">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-on-surface-variant tracking-wider uppercase font-semibold">
-                  Emergency Watch
+                  Unread Alerts
                 </span>
                 <span className="p-1.5 rounded-lg bg-secondary-fixed text-primary flex items-center justify-center">
                   <Eye className="w-4 h-4" />
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-extrabold text-primary font-serif">Armed</span>
-                <span className="text-xs text-on-surface-variant">Watchdog 120m</span>
+                <span className="text-2xl font-extrabold text-primary font-serif">{unreadCount}</span>
+                <span className="text-xs text-on-surface-variant">of {notifications.length} stored</span>
               </div>
               <div className="w-full bg-surface-container-high rounded-full h-1.5 overflow-hidden mt-1">
-                <div className="bg-primary h-full rounded-full transition-all" style={{ width: "74%" }} />
+                <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${readPercent}%` }} />
               </div>
+              <span className="text-[11px] text-on-surface-variant">{readPercent}% read</span>
             </div>
 
             {/* Stat 3 */}
             <div className="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between gap-2 relative overflow-hidden group hover:shadow-md transition-shadow border border-outline-variant/30">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-on-surface-variant tracking-wider uppercase font-semibold">
-                  Cache Invalidation
+                  Offline Sync Notices
                 </span>
                 <span className="p-1.5 rounded-lg bg-secondary-fixed text-primary flex items-center justify-center">
                   <Layers className="w-4 h-4" />
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-extrabold text-on-surface font-mono">1 Sector</span>
-                <span className="text-xs text-amber-700 font-semibold">Exp. in 48h</span>
+                <span className="text-2xl font-extrabold text-on-surface font-mono">{offlineSyncCount}</span>
+                <span className="text-xs text-amber-700 font-semibold">Sync events</span>
               </div>
               <div className="flex items-center justify-between text-on-surface-variant text-[11px] pt-1 border-t border-outline-variant/20">
-                <span className="truncate">Kumano High Ridge DEM</span>
+                <span className="truncate">Notifications stored</span>
                 <span className="bg-surface-container-high text-on-surface px-1.5 py-0.2 rounded font-mono text-[10px]">
-                  42 MB
+                  {notifications.length}
                 </span>
               </div>
             </div>
@@ -310,18 +402,20 @@ export default function NotificationsCenterPage() {
             <div className="bg-surface-container-lowest rounded-xl p-4 shadow-sm flex flex-col justify-between gap-2 relative overflow-hidden group hover:shadow-md transition-shadow border border-outline-variant/30">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] text-on-surface-variant tracking-wider uppercase font-semibold">
-                  Battery & Thermal
+                  Alert Categories
                 </span>
                 <span className="p-1.5 rounded-lg bg-surface-container-high text-primary flex items-center justify-center">
                   <BatteryMedium className="w-4 h-4" />
                 </span>
               </div>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-2xl font-extrabold text-primary font-serif">0 Active</span>
-                <span className="text-xs text-emerald-700 font-medium font-mono">Nominal 31°C</span>
+                <span className="text-2xl font-extrabold text-primary font-serif">{categoryCount}</span>
+                <span className="text-xs text-emerald-700 font-medium font-mono">In use</span>
               </div>
               <div className="flex items-center justify-between text-on-surface-variant text-[11px] pt-1 border-t border-outline-variant/20">
-                <span>Core: 84% • Bivouac: OK</span>
+                <span className="truncate">
+                  Satellite • Weather • Sync • Emergency • Transit
+                </span>
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
               </div>
             </div>
@@ -384,6 +478,25 @@ export default function NotificationsCenterPage() {
 
               {/* Alerts List */}
               <div className="flex flex-col gap-3">
+                {loading ? (
+                  <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 text-center text-xs text-on-surface-variant">
+                    Loading your alerts…
+                  </div>
+                ) : error ? (
+                  <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 text-center">
+                    <p className="text-xs text-error">{error}</p>
+                    <p className="text-[11px] text-on-surface-variant mt-1">
+                      Alerts saved on this device are still shown once loaded.
+                    </p>
+                  </div>
+                ) : filteredAlerts.length === 0 ? (
+                  <div className="p-6 rounded-xl bg-surface-container-lowest border border-outline-variant/30 text-center text-xs text-on-surface-variant">
+                    {alerts.length === 0
+                      ? "No alerts yet — events from trips, sync and uploads show up here."
+                      : "No alerts match this filter."}
+                  </div>
+                ) : null}
+
                 {filteredAlerts.map((alert) => (
                   <div
                     key={alert.id}
@@ -408,11 +521,9 @@ export default function NotificationsCenterPage() {
                             >
                               {alert.badgeLabel}
                             </span>
-                            {alert.packetId && (
-                              <span className="text-[11px] text-on-surface-variant font-mono">
-                                ID: {alert.packetId}
-                              </span>
-                            )}
+                            <span className="text-[11px] text-on-surface-variant font-mono">
+                              ID: {alert.id.slice(0, 8)}
+                            </span>
                           </div>
                           <h2 className="text-base font-bold text-on-surface mt-1 tracking-tight font-serif">
                             {alert.title}
@@ -438,15 +549,26 @@ export default function NotificationsCenterPage() {
                       </div>
                       <div className="flex items-center gap-2 self-end sm:self-center">
                         <button
-                          onClick={() => showToast(`Inspect Raw Hex: Payload 0x4B92... verified.`)}
-                          className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-mono transition-colors flex items-center gap-1"
+                          onClick={() => void toggleRead(alert)}
+                          disabled={acting}
+                          className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface text-xs font-mono transition-colors flex items-center gap-1 disabled:opacity-60"
                         >
-                          <Terminal className="w-3.5 h-3.5" />
-                          <span>Raw Hex</span>
+                          {alert.read ? (
+                            <>
+                              <AlertCircle className="w-3.5 h-3.5" />
+                              <span>Mark Unread</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>Mark Read</span>
+                            </>
+                          )}
                         </button>
                         <button
-                          onClick={() => dismissAlert(alert.id)}
-                          className="px-2.5 py-1 rounded-lg bg-surface-container-lowest hover:bg-rose-50 hover:text-rose-700 text-on-surface-variant text-xs transition-colors border border-outline-variant/30"
+                          onClick={() => void dismissAlert(alert.id)}
+                          disabled={acting}
+                          className="px-2.5 py-1 rounded-lg bg-surface-container-lowest hover:bg-rose-50 hover:text-rose-700 text-on-surface-variant text-xs transition-colors border border-outline-variant/30 disabled:opacity-60"
                         >
                           Dismiss
                         </button>
@@ -461,11 +583,14 @@ export default function NotificationsCenterPage() {
                 <div className="flex items-center gap-2 text-xs">
                   <Radio className="w-4 h-4 text-primary shrink-0" />
                   <span className="text-on-surface">
-                    Telemetry Buffer: 1,420 events cached locally. Real-time satellite relay polling every 60s.
+                    {notifications.length} alert
+                    {notifications.length === 1 ? "" : "s"} in your account •{" "}
+                    {unreadCount} unread • stored in your account and cached on
+                    this device for offline reading.
                   </span>
                 </div>
                 <span className="font-mono text-xs text-primary uppercase font-bold tracking-widest shrink-0">
-                  CRC-32 OK
+                  {unreadCount} Unread
                 </span>
               </div>
             </div>
@@ -543,10 +668,15 @@ export default function NotificationsCenterPage() {
 
                 <div className="p-3 rounded-lg bg-surface-container-low flex items-center justify-between text-xs border border-outline-variant/20">
                   <span className="text-on-surface-variant">
-                    Watchdog: <strong className="text-on-surface">114 mins remaining</strong>
+                    Escalation:{" "}
+                    <strong className="text-on-surface">Not configured</strong>
                   </span>
                   <button
-                    onClick={() => showToast("Watchdog timer refreshed for 120 minutes.")}
+                    onClick={() =>
+                      showToast(
+                        "No escalation watchdog is configured — no ping was sent."
+                      )
+                    }
                     className="text-primary font-bold hover:underline"
                   >
                     Ping Now
@@ -645,7 +775,7 @@ export default function NotificationsCenterPage() {
                     </span>
                     <h3 className="text-lg font-bold text-primary font-serif">Delivery Channels</h3>
                   </div>
-                  <span className="text-xs text-on-surface-variant font-bold">3 Paired</span>
+                  <span className="text-xs text-on-surface-variant font-bold">Not set up</span>
                 </div>
 
                 <div className="flex flex-col gap-2.5">
@@ -657,8 +787,8 @@ export default function NotificationsCenterPage() {
                         <div className="text-[10px] text-on-surface-variant">Lockscreen alerts</div>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-secondary-fixed text-primary text-[10px] font-bold">
-                      Active
+                    <span className="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold">
+                      Not configured
                     </span>
                   </div>
 
@@ -667,11 +797,11 @@ export default function NotificationsCenterPage() {
                       <Watch className="w-4 h-4 text-primary" />
                       <div>
                         <div className="text-xs font-bold text-on-surface">LED Strobe & Haptic</div>
-                        <div className="text-[10px] text-on-surface-variant">Suunto 9 Peak Pro (BLE-91)</div>
+                        <div className="text-[10px] text-on-surface-variant">No watch paired</div>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-secondary-fixed text-primary text-[10px] font-bold">
-                      Paired
+                    <span className="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold">
+                      Not paired
                     </span>
                   </div>
 
@@ -683,8 +813,8 @@ export default function NotificationsCenterPage() {
                         <div className="text-[10px] text-on-surface-variant">Emergency Dispatch Roster</div>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full bg-primary text-white text-[10px] font-bold">
-                      Armed
+                    <span className="px-2 py-0.5 rounded-full bg-surface-container-highest text-on-surface-variant text-[10px] font-bold">
+                      Not configured
                     </span>
                   </div>
                 </div>

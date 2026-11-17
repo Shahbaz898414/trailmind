@@ -1,15 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
   Calendar,
   CheckCircle2,
-  Clock,
   Compass,
-  Download,
   Filter,
   HardDrive,
   MapPin,
@@ -21,14 +19,45 @@ import {
   Users,
 } from "lucide-react";
 
-import { sampleTripsList, type TripModel } from "@/data/trips";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import { listTrips, type TripRecord } from "@/services/trips";
+import { formatBytes, getStorageEstimate } from "@/lib/offline/storage-manager";
 
 export default function TripsPage() {
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [activeTab, setActiveTab] = useState<"all" | "upcoming" | "completed" | "draft">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [onlyOffline, setOnlyOffline] = useState(false);
+  const [storageLabel, setStorageLabel] = useState<string | null>(null);
 
-  const filteredTrips = sampleTripsList.filter((trip) => {
+  // Real trips for the signed-in user (served from the local mirror offline).
+  const tripsKey = uid ? `trips:${uid}` : null;
+  const {
+    data: tripsData,
+    error,
+    loading,
+  } = useAsyncResource<TripRecord[]>(tripsKey, async () => {
+    if (!uid) return [];
+    const page = await listTrips(uid, { pageSize: 50 });
+    return page.items;
+  });
+  const trips = tripsData ?? [];
+
+  useEffect(() => {
+    let cancelled = false;
+    getStorageEstimate().then((estimate) => {
+      if (!cancelled && estimate) {
+        setStorageLabel(formatBytes(estimate.usageBytes));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredTrips = trips.filter((trip) => {
     // Tab filter
     if (activeTab === "upcoming" && trip.status !== "upcoming" && trip.status !== "in-progress") return false;
     if (activeTab === "completed" && trip.status !== "completed") return false;
@@ -71,10 +100,18 @@ export default function TripsPage() {
           <div className="flex flex-wrap items-center gap-2.5 pt-1">
             <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-border text-on-surface text-xs font-semibold shadow-sm">
               <HardDrive className="size-4 text-primary" />
-              <span className="text-primary">3 Trips Cached</span>
-              <span className="text-on-surface-variant font-normal">(1.8 GB)</span>
+              <span className="text-primary">
+                {loading ? "…" : `${trips.length} Trip${trips.length === 1 ? "" : "s"}`}
+              </span>
+              <span className="text-on-surface-variant font-normal">
+                {storageLabel ? `(${storageLabel} used)` : ""}
+              </span>
               <span className="size-1 rounded-full bg-border" />
-              <span className="text-emerald-700">100% Offline Ready</span>
+              <span className="text-emerald-700">
+                {loading
+                  ? "…"
+                  : `${trips.filter((t) => t.offlineReady).length} Offline Ready`}
+              </span>
             </div>
 
             <Link
@@ -93,10 +130,10 @@ export default function TripsPage() {
             {/* Segmented Status Tabs */}
             <div className="inline-flex p-1 rounded-xl bg-surface-container-low overflow-x-auto max-w-full">
               {[
-                { id: "all" as const, label: "All Trips", count: sampleTripsList.length },
-                { id: "upcoming" as const, label: "Upcoming & Active", count: sampleTripsList.filter((t) => t.status === "upcoming").length },
-                { id: "draft" as const, label: "Drafts & Planning", count: sampleTripsList.filter((t) => t.status === "draft").length },
-                { id: "completed" as const, label: "Completed", count: sampleTripsList.filter((t) => t.status === "completed").length },
+                { id: "all" as const, label: "All Trips", count: trips.length },
+                { id: "upcoming" as const, label: "Upcoming & Active", count: trips.filter((t) => t.status === "upcoming" || t.status === "in-progress").length },
+                { id: "draft" as const, label: "Drafts & Planning", count: trips.filter((t) => t.status === "draft").length },
+                { id: "completed" as const, label: "Completed", count: trips.filter((t) => t.status === "completed").length },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -149,25 +186,45 @@ export default function TripsPage() {
 
         {/* Trips Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {filteredTrips.map((trip) => (
+          {loading ? (
+            <div className="col-span-full py-12 text-center text-sm text-on-surface-variant bg-white rounded-2xl border border-border">
+              Loading your trips…
+            </div>
+          ) : error ? (
+            <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-border">
+              <p className="text-sm text-error">{error}</p>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Your saved trips are still on this device if you downloaded them.
+              </p>
+            </div>
+          ) : null}
+
+          {!loading && !error &&
+            filteredTrips.map((trip) => (
             <div
               key={trip.id}
               className="rounded-2xl bg-white border border-border shadow-sm overflow-hidden flex flex-col group hover:shadow-md transition-shadow"
             >
               {/* Cover Image & Status Overlays */}
               <div className="relative h-56 bg-surface-container-high overflow-hidden">
-                <Image
-                  src={trip.coverImage}
-                  alt={trip.title}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+                {trip.coverImage || trip.heroImage ? (
+                  <Image
+                    src={(trip.coverImage || trip.heroImage) as string}
+                    alt={trip.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-primary-container to-surface-container-high">
+                    <MapPin className="size-10 text-primary/50" />
+                  </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
 
                 {/* Top Badges */}
                 <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                   <span className="px-2.5 py-0.5 rounded-full bg-white/95 text-primary text-xs font-bold shadow-sm">
-                    {trip.country}
+                    {trip.country || trip.destination}
                   </span>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold shadow-sm ${
@@ -180,6 +237,11 @@ export default function TripsPage() {
                   >
                     {trip.status.toUpperCase()}
                   </span>
+                  {trip.syncState === "queued" ? (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-500/90 text-white text-xs font-bold shadow-sm">
+                      Pending sync
+                    </span>
+                  ) : null}
                 </div>
 
                 {/* Top Right Offline Indicator */}
@@ -251,7 +313,7 @@ export default function TripsPage() {
             </div>
           ))}
 
-          {filteredTrips.length === 0 && (
+          {!loading && !error && filteredTrips.length === 0 && (
             <div className="col-span-full py-12 flex flex-col items-center justify-center text-center p-6 bg-white rounded-2xl border border-dashed border-border">
               <Compass className="size-10 text-on-surface-variant/40 mb-2" />
               <h3 className="font-heading font-bold text-base text-primary">No Expeditions Found</h3>

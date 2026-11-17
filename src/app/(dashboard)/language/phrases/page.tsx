@@ -19,11 +19,42 @@ import {
 } from "lucide-react";
 
 import { samplePhrases, type PhraseItem } from "@/data/languages";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  listSavedPhrases,
+  type SavedPhraseRecord,
+} from "@/services/language";
 
 export default function SavedPhrasesAudioStudioPage() {
-  const [phrases, setPhrases] = useState<PhraseItem[]>(
-    samplePhrases.filter((p) => p.isSavedForOfflineFlashcard)
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const phrasesKey = uid ? `phrases:${uid}` : null;
+  const { data: dbPhrases } = useAsyncResource<SavedPhraseRecord[]>(
+    phrasesKey,
+    async () => {
+      if (!uid) return [];
+      return listSavedPhrases(uid);
+    }
   );
+
+  const phrases: PhraseItem[] =
+    dbPhrases && dbPhrases.length > 0
+      ? dbPhrases.map((p) => ({
+          id: p.id,
+          english: p.english,
+          japaneseKanji: p.japaneseKanji,
+          japaneseFurigana: p.japaneseFurigana || p.romaji,
+          romaji: p.romaji,
+          category: p.category,
+          contextNote: p.contextNote,
+          audioKey: p.audioKey,
+          isSavedForOfflineFlashcard: p.isSavedForOfflineFlashcard,
+          taxiCardLargePrint: p.category === "Transport & Taxi",
+        }))
+      : samplePhrases.filter((p) => p.isSavedForOfflineFlashcard);
+
   const [activeIdx, setActiveIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [showTaxiModal, setShowTaxiModal] = useState(false);

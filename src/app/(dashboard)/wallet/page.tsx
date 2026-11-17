@@ -24,12 +24,46 @@ import {
 } from "lucide-react";
 
 import { travelDocumentsList, type TravelDocumentItem } from "@/data/travel-documents";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  listDocuments,
+  createDocumentMetadata,
+  deleteDocument,
+  type TravelDocumentRecord,
+} from "@/services/documents";
 
 export default function WalletPage() {
-  const [documents, setDocuments] = useState<TravelDocumentItem[]>(travelDocumentsList);
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const [localDocs, setLocalDocs] = useState<TravelDocumentItem[] | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("All");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
+
+  // Load from Dexie offline mirror or Firestore if authenticated
+  const docsKey = uid ? `docs:${uid}` : null;
+  const { data: dbDocs } = useAsyncResource<TravelDocumentRecord[]>(docsKey, async () => {
+    if (!uid) return [];
+    const res = await listDocuments(uid, { pageSize: 50 });
+    return res.items;
+  });
+
+  const baseDocuments: TravelDocumentItem[] =
+    dbDocs && dbDocs.length > 0
+      ? dbDocs.map((d) => ({
+          ...d,
+          seatOrRoom: d.seatOrRoom ?? undefined,
+          departureTime: d.departureTime ?? undefined,
+          arrivalTime: d.arrivalTime ?? undefined,
+          departureStation: d.departureStation ?? undefined,
+          arrivalStation: d.arrivalStation ?? undefined,
+          image: d.image ?? undefined,
+        }))
+      : travelDocumentsList;
+
+  const documents = localDocs ?? baseDocuments;
 
   // New Document Modal Form
   const [docCategory, setDocCategory] = useState<TravelDocumentItem["category"]>("Transport");
@@ -68,7 +102,25 @@ export default function WalletPage() {
       notes: "Added to offline vault.",
     };
 
-    setDocuments([newDoc, ...documents]);
+    setLocalDocs([newDoc, ...documents]);
+
+    if (uid) {
+      void createDocumentMetadata(uid, {
+        category: docCategory,
+        title: docTitle,
+        referenceCode: docRef || `REF-${Math.floor(100000 + Math.random() * 900000)}`,
+        issuer: docIssuer || "Verified Provider",
+        carrierOrHotel: docIssuer || "Expedition Service",
+        validDates: docDates,
+        encryptionStatus: "AES-256 Encrypted (On-Device)",
+        barcodeType: "QR-Code",
+        barcodeValue: `TM-${docTitle.toUpperCase()}-VERIFIED`,
+        status: "active",
+        details: { Status: "Confirmed" },
+        notes: "Added to offline vault.",
+      }).catch((err) => console.warn("[TrailMind] createDocumentMetadata failed:", err));
+    }
+
     setIsModalOpen(false);
     setDocTitle("");
     setDocRef("");
@@ -76,7 +128,12 @@ export default function WalletPage() {
   };
 
   const handleDelete = (id: string) => {
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
+    setLocalDocs(documents.filter((d) => d.id !== id));
+    if (uid) {
+      void deleteDocument(uid, id).catch((err) =>
+        console.warn("[TrailMind] deleteDocument failed:", err)
+      );
+    }
   };
 
   return (

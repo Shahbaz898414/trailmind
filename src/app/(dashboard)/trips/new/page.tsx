@@ -23,16 +23,38 @@ import {
   Users,
 } from "lucide-react";
 
+import { useAuth } from "@/components/auth/auth-provider";
+import { createTrip } from "@/services/trips";
+
+/** Display labels for the picker ids (stored verbatim on the trip). */
+const TERRAIN_TITLES: Record<string, string> = {
+  paved: "Cobblestone & Town",
+  "steep-stone": "Ancient Forest Stone",
+  "alpine-ridge": "Alpine Ridge & Scree",
+};
+const PACE_TITLES: Record<string, string> = {
+  contemplative: "Contemplative Pace",
+  moderate: "Steady Trekking",
+  endurance: "Endurance Mountain",
+};
+const LODGING_TITLES: Record<string, string> = {
+  minshuku: "Traditional Minshuku & Ryokan",
+  hut: "Mountain Refuge / Hut",
+  camp: "Wilderness Bivouac",
+};
+
 export default function CreateTripPage() {
   const router = useRouter();
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
   const [currentStep, setCurrentStep] = useState(1);
 
-  // Step 1: Destination Parameters
-  const [title, setTitle] = useState("Kumano Kodo Ancient Pilgrimage");
-  const [destination, setDestination] = useState("Kii Peninsula, Wakayama, Japan");
-  const [startDate, setStartDate] = useState("2026-05-10");
-  const [endDate, setEndDate] = useState("2026-05-16");
-  const [travelers, setTravelers] = useState(2);
+  // Step 1: Destination Parameters — the user fills these in; no sample data.
+  const [title, setTitle] = useState("");
+  const [destination, setDestination] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [travelers, setTravelers] = useState(1);
 
   // Step 2: Terrain, Pace & Logistics
   const [terrain, setTerrain] = useState("steep-stone");
@@ -45,14 +67,52 @@ export default function CreateTripPage() {
   const [satelliteSync, setSatelliteSync] = useState(true);
   const [hasAllergies, setHasAllergies] = useState(true);
 
-  const [isSynthesizing, setIsSynthesizing] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const handleFinish = () => {
-    setIsSynthesizing(true);
-    setTimeout(() => {
-      setIsSynthesizing(false);
-      router.push("/trips/trip-kyoto-2026/itinerary");
-    }, 1200);
+  // Real trip creation — no simulated progress and no hardcoded destination.
+  const handleFinish = async () => {
+    if (isCreating) return;
+    if (!uid) {
+      setFormError("Sign in to create a trip.");
+      return;
+    }
+    if (!title.trim() || !destination.trim()) {
+      setFormError("Give the expedition a name and a destination.");
+      setCurrentStep(1);
+      return;
+    }
+    if (!startDate || !endDate) {
+      setFormError("Pick a start and end date.");
+      setCurrentStep(1);
+      return;
+    }
+
+    setIsCreating(true);
+    setFormError(null);
+    try {
+      const trip = await createTrip(uid, {
+        title: title.trim(),
+        destination: destination.trim(),
+        startDate,
+        endDate,
+        status: "upcoming",
+        travelers,
+        terrainType: TERRAIN_TITLES[terrain] ?? terrain,
+        summary: `${PACE_TITLES[pace] ?? pace} • ${LODGING_TITLES[lodging] ?? lodging}`,
+        packWeightKg: packWeight,
+        maxWeightKg: maxWeight,
+        satelliteSyncCadence: satelliteSync
+          ? "Hourly satellite telemetry"
+          : "On reconnect",
+      });
+      router.push(`/trips/${trip.id}/itinerary`);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Could not create the trip."
+      );
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -482,15 +542,24 @@ export default function CreateTripPage() {
                 <ArrowRight className="size-3.5" />
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={handleFinish}
-                disabled={isSynthesizing}
-                className="flex items-center gap-2 px-7 py-2.5 rounded-lg bg-primary hover:bg-primary-container text-white text-xs font-bold shadow-lg transition-all cursor-pointer disabled:opacity-80"
-              >
-                <Sparkles className="size-4 text-emerald-300" />
-                <span>{isSynthesizing ? "Synthesizing Route..." : "Compile Expedition Blueprint"}</span>
-              </button>
+              <div className="flex flex-col items-end gap-1.5">
+                {formError ? (
+                  <p className="text-[11px] text-error text-right max-w-xs">
+                    {formError}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void handleFinish()}
+                  disabled={isCreating}
+                  className="flex items-center gap-2 px-7 py-2.5 rounded-lg bg-primary hover:bg-primary-container text-white text-xs font-bold shadow-lg transition-all cursor-pointer disabled:opacity-80"
+                >
+                  <Sparkles className="size-4 text-emerald-300" />
+                  <span>
+                    {isCreating ? "Creating trip…" : "Compile Expedition Blueprint"}
+                  </span>
+                </button>
+              </div>
             )}
           </div>
         </div>

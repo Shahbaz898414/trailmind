@@ -19,6 +19,9 @@ import {
   X,
 } from "lucide-react";
 
+import { useAuth } from "@/components/auth/auth-provider";
+import { flushSyncQueue } from "@/lib/offline/sync-engine";
+
 interface ConflictItem {
   id: string;
   entityName: string;
@@ -29,6 +32,7 @@ interface ConflictItem {
 }
 
 export default function ConflictResolutionPage() {
+  const { user } = useAuth();
   const [conflicts, setConflicts] = useState<ConflictItem[]>([
     {
       id: "cnf-1",
@@ -72,6 +76,11 @@ export default function ConflictResolutionPage() {
 
   const handleCommit = () => {
     setIsCommitted(true);
+    if (user?.uid) {
+      void flushSyncQueue(user.uid).catch((err) =>
+        console.warn("[TrailMind] flushSyncQueue failed:", err)
+      );
+    }
     setTimeout(() => {
       setIsCommitted(false);
     }, 2500);

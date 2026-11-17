@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -32,6 +32,15 @@ import {
 
 import { kyoto12DayItinerary, type ItineraryDay, type ItineraryActivity } from "@/data/itinerary";
 import { sampleTripsList } from "@/data/trips";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useAsyncResource } from "@/hooks/use-async-resource";
+import {
+  listActivities,
+  createActivity,
+  updateActivity,
+  deleteActivity,
+  type ActivityRecord,
+} from "@/services/itinerary";
 
 export default function TripItineraryPage({
   params,
@@ -42,11 +51,60 @@ export default function TripItineraryPage({
   const trip =
     sampleTripsList.find((t) => t.id === resolvedParams.id) || sampleTripsList[0];
 
-  const [days, setDays] = useState<ItineraryDay[]>(kyoto12DayItinerary);
+  const { user } = useAuth();
+  const uid = user?.uid ?? null;
+
+  const [localDays, setLocalDays] = useState<ItineraryDay[] | null>(null);
   const [selectedDayNumber, setSelectedDayNumber] = useState<number>(1);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isHudOpen, setIsHudOpen] = useState(false);
   const [isEmptyState, setIsEmptyState] = useState(false);
+
+  // Load activities from offline Dexie / Firestore
+  const itineraryKey = uid ? `itinerary:${uid}:${resolvedParams.id}` : null;
+  const { data: dbActivities } = useAsyncResource<ActivityRecord[]>(
+    itineraryKey,
+    async () => {
+      if (!uid) return [];
+      return listActivities(uid, resolvedParams.id);
+    }
+  );
+
+  // Merge loaded activities into days if they exist
+  const baseDays = useMemo(() => {
+    if (!dbActivities || dbActivities.length === 0) return kyoto12DayItinerary;
+    const updated = kyoto12DayItinerary.map((d) => ({ ...d, activities: [...d.activities] }));
+    for (const act of dbActivities) {
+      const targetDay = updated.find((d) => d.dayNumber === act.day);
+      if (targetDay) {
+        const existingIdx = targetDay.activities.findIndex((a) => a.id === act.id);
+        const mapped: ItineraryActivity = {
+          id: act.id,
+          timeSlot: act.timeSlot,
+          title: act.title,
+          category: act.category,
+          location: act.location,
+          coordinates: act.coordinates,
+          duration: act.duration,
+          elevation: act.elevation,
+          crowdLevel: act.crowdLevel,
+          status: act.status,
+          description: act.description,
+          solarEphemeris: act.solarEphemeris || undefined,
+          notes: act.notes || undefined,
+          audioKey: act.audioKey || undefined,
+        };
+        if (existingIdx >= 0) {
+          targetDay.activities[existingIdx] = mapped;
+        } else {
+          targetDay.activities.push(mapped);
+        }
+      }
+    }
+    return updated;
+  }, [dbActivities]);
+
+  const days = localDays ?? baseDays;
 
   // Edit drawer state
   const [editingActivity, setEditingActivity] = useState<ItineraryActivity | null>(null);
@@ -83,9 +141,10 @@ export default function TripItineraryPage({
     if (!formTitle.trim()) return;
 
     if (editingActivity) {
-      // Update existing
-      setDays((prev) =>
-        prev.map((d) => {
+      // Update existing in local state
+      setLocalDays((prev) => {
+        const current = prev ?? baseDays;
+        return current.map((d) => {
           if (d.dayNumber !== selectedDayNumber) return d;
           return {
             ...d,
@@ -102,8 +161,19 @@ export default function TripItineraryPage({
                 : a
             ),
           };
-        })
-      );
+        });
+      });
+
+      // Persist to backend / offline outbox if authenticated
+      if (uid) {
+        void updateActivity(uid, resolvedParams.id, editingActivity.id, {
+          title: formTitle,
+          timeSlot: formTime,
+          location: formLocation,
+          category: formCategory,
+          notes: formNotes,
+        }).catch((err) => console.warn("[TrailMind] updateActivity failed:", err));
+      }
     } else {
       // Add new
       const newAct: ItineraryActivity = {
@@ -120,29 +190,50 @@ export default function TripItineraryPage({
         description: formNotes || "Added to local on-device itinerary.",
         notes: formNotes,
       };
-      setDays((prev) =>
-        prev.map((d) => {
+      setLocalDays((prev) => {
+        const current = prev ?? baseDays;
+        return current.map((d) => {
           if (d.dayNumber !== selectedDayNumber) return d;
           return {
             ...d,
             activities: [...d.activities, newAct],
           };
-        })
-      );
+        });
+      });
+
+      // Persist to backend / offline outbox if authenticated
+      if (uid) {
+        void createActivity(uid, resolvedParams.id, {
+          day: selectedDayNumber,
+          date: currentDay?.date || "2026-04-01",
+          title: formTitle,
+          timeSlot: formTime,
+          location: formLocation,
+          category: formCategory,
+          notes: formNotes,
+        }).catch((err) => console.warn("[TrailMind] createActivity failed:", err));
+      }
     }
     setIsDrawerOpen(false);
   };
 
   const handleDeleteActivity = (actId: string) => {
-    setDays((prev) =>
-      prev.map((d) => {
+    setLocalDays((prev) => {
+      const current = prev ?? baseDays;
+      return current.map((d) => {
         if (d.dayNumber !== selectedDayNumber) return d;
         return {
           ...d,
           activities: d.activities.filter((a) => a.id !== actId),
         };
-      })
-    );
+      });
+    });
+
+    if (uid) {
+      void deleteActivity(uid, resolvedParams.id, actId).catch((err) =>
+        console.warn("[TrailMind] deleteActivity failed:", err)
+      );
+    }
   };
 
   return (
